@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="AmSt001" name="AmpStudio" projectType="audioplug" version="0.1.0"
+              bundleIdentifier="com.ampstudio.AmpStudio" companyName="AmpStudio"
+              companyWebsite="https://example.com" companyCopyright="AmpStudio"
+              pluginManufacturerCode="AmSt" pluginCode="AmpS"
+              pluginName="AmpStudio" pluginDesc="Tube amp and FX plugin shell."
+              pluginManufacturer="AmpStudio" pluginAUIsSandboxSafe="1"
+              pluginFormats="buildVST3,buildAU,buildStandalone"
+              pluginCharacteristicsValue=""
+              useAppConfig="0" addUsingNamespaceToJuceHeader="1"
+              cppLanguageStandard="17" jucerFormatVersion="1"
+              userNotes="Tube amp and FX plugin shell.">
+  <MAINGROUP id="AmStGrp" name="AmpStudio">
+    <GROUP id="AmStSrc" name="Source">
+      <FILE id="ppH" name="PluginProcessor.h" compile="0" resource="0" file="Source/PluginProcessor.h"/>
+      <FILE id="ppC" name="PluginProcessor.cpp" compile="1" resource="0" file="Source/PluginProcessor.cpp"/>
+      <FILE id="peH" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <FILE id="peC" name="PluginEditor.cpp" compile="1" resource="0" file="Source/PluginEditor.cpp"/>
+      <GROUP id="AmStDsp" name="dsp">
+        <FILE id="blH" name="Block.h" compile="0" resource="0" file="Source/dsp/Block.h"/>
+        <FILE id="byH" name="BypassBlock.h" compile="0" resource="0" file="Source/dsp/BypassBlock.h"/>
+        <FILE id="chH" name="Chain.h" compile="0" resource="0" file="Source/dsp/Chain.h"/>
+        <FILE id="chC" name="Chain.cpp" compile="1" resource="0" file="Source/dsp/Chain.cpp"/>
+        <GROUP id="AmStFx" name="fx">
+          <FILE id="tsH" name="TubeScreamer.h" compile="0" resource="0" file="Source/dsp/fx/TubeScreamer.h"/>
+        </GROUP>
+        <GROUP id="AmStAm" name="amps">
+          <FILE id="c5H" name="Champ5F1.h" compile="0" resource="0" file="Source/dsp/amps/Champ5F1.h"/>
+        </GROUP>
+        <GROUP id="AmStCa" name="captures">
+          <FILE id="ncH" name="NeuralCapture.h" compile="0" resource="0" file="Source/dsp/captures/NeuralCapture.h"/>
+        </GROUP>
+      </GROUP>
+      <GROUP id="AmStUi" name="ui">
+        <FILE id="lpH" name="LibraryPanel.h" compile="0" resource="0" file="Source/ui/LibraryPanel.h"/>
+        <FILE id="lpC" name="LibraryPanel.cpp" compile="1" resource="0" file="Source/ui/LibraryPanel.cpp"/>
+        <FILE id="csH" name="ChainStrip.h" compile="0" resource="0" file="Source/ui/ChainStrip.h"/>
+        <FILE id="csC" name="ChainStrip.cpp" compile="1" resource="0" file="Source/ui/ChainStrip.cpp"/>
+        <FILE id="scH" name="SlotComponent.h" compile="0" resource="0" file="Source/ui/SlotComponent.h"/>
+        <FILE id="scC" name="SlotComponent.cpp" compile="1" resource="0" file="Source/ui/SlotComponent.cpp"/>
+      </GROUP>
+      <GROUP id="AmStUt" name="util">
+        <FILE id="piH" name="ParamIDs.h" compile="0" resource="0" file="Source/util/ParamIDs.h"/>
+        <FILE id="mfH" name="ModuleFactory.h" compile="0" resource="0" file="Source/util/ModuleFactory.h"/>
+        <FILE id="mfC" name="ModuleFactory.cpp" compile="1" resource="0" file="Source/util/ModuleFactory.cpp"/>
+      </GROUP>
+    </GROUP>
+    <GROUP id="AmStRes" name="Resources"/>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_plugin_client" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="0"/>
+  </MODULES>
+  <EXPORTFORMATS>
+    <XCODE_MAC targetFolder="Builds/MacOSX" microphonePermissionNeeded="1"
+               microphonePermissionText="AmpStudio needs microphone access for live guitar/audio input.">
+      <CONFIGURATIONS>
+        <CONFIGURATION name="Debug" isDebug="1" optimisation="1" targetName="AmpStudio"/>
+        <CONFIGURATION name="Release" isDebug="0" optimisation="3" targetName="AmpStudio"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_plugin_client" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_dsp" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="libs/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="libs/JUCE/modules"/>
+      </MODULEPATHS>
+    </XCODE_MAC>
+  </EXPORTFORMATS>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
+</JUCERPROJECT>

@@ -1,0 +1,9 @@
+Builds/
+**/JuceLibraryCode/
+.DS_Store
+*.user
+xcuserdata/
+*.mode1v3
+*.pbxuser
+DerivedData/
+*.app
