@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "dsp/Chain.h"
+#include "dsp/InputCalibrator.h"
 #include "util/ParamIDs.h"
 
 class AmpStudioAudioProcessorEditor;
@@ -43,6 +44,7 @@ public:
 
     juce::AudioProcessorValueTreeState& getAPVTS() noexcept { return apvts; }
     Chain& getChain() noexcept { return chain; }
+    InputCalibrator& getInputCalibrator() noexcept { return inputCalibrator; }
 
     int getSelectedSlot() const noexcept { return selectedSlot; }
     void setSelectedSlot (int index);
@@ -50,16 +52,39 @@ public:
     void loadModuleIntoSlot (int slotIndex, const juce::String& typeId);
     void loadModuleIntoSelectedSlot (const juce::String& typeId);
 
+    enum class CalibrationApplyResult
+    {
+        none,
+        applied,
+        tooQuiet
+    };
+
+    void startInputCalibration();
+    CalibrationApplyResult applyPendingCalibrationTrim();
+
+    float getInputPeakDb() const noexcept { return inputPeakDb.load (std::memory_order_relaxed); }
+    float getInputRmsDb() const noexcept { return inputRmsDb.load (std::memory_order_relaxed); }
+    float getOutputPeakDb() const noexcept { return outputPeakDb.load (std::memory_order_relaxed); }
+
     void addChangeListener (juce::ChangeListener* listener) { ChangeBroadcaster::addChangeListener (listener); }
     void removeChangeListener (juce::ChangeListener* listener) { ChangeBroadcaster::removeChangeListener (listener); }
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    static void measureBufferLevels (const juce::AudioBuffer<float>& buffer,
+                                     float& peakOut,
+                                     float& rmsOut) noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
     Chain chain;
+    InputCalibrator inputCalibrator;
     int selectedSlot = 0;
+    std::atomic<float>* inputTrimParam = nullptr;
     std::atomic<float>* masterGainParam = nullptr;
+
+    std::atomic<float> inputPeakDb { -100.0f };
+    std::atomic<float> inputRmsDb { -100.0f };
+    std::atomic<float> outputPeakDb { -100.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AmpStudioAudioProcessor)
 };

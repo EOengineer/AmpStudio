@@ -22,6 +22,8 @@
         <FILE id="byH" name="BypassBlock.h" compile="0" resource="0" file="Source/dsp/BypassBlock.h"/>
         <FILE id="chH" name="Chain.h" compile="0" resource="0" file="Source/dsp/Chain.h"/>
         <FILE id="chC" name="Chain.cpp" compile="1" resource="0" file="Source/dsp/Chain.cpp"/>
+        <FILE id="lrH" name="LevelReference.h" compile="0" resource="0" file="Source/dsp/LevelReference.h"/>
+        <FILE id="icH" name="InputCalibrator.h" compile="0" resource="0" file="Source/dsp/InputCalibrator.h"/>
         <GROUP id="AmStFx" name="fx">
           <FILE id="tsH" name="TubeScreamer.h" compile="0" resource="0" file="Source/dsp/fx/TubeScreamer.h"/>
         </GROUP>
@@ -39,6 +41,7 @@
         <FILE id="csC" name="ChainStrip.cpp" compile="1" resource="0" file="Source/ui/ChainStrip.cpp"/>
         <FILE id="scH" name="SlotComponent.h" compile="0" resource="0" file="Source/ui/SlotComponent.h"/>
         <FILE id="scC" name="SlotComponent.cpp" compile="1" resource="0" file="Source/ui/SlotComponent.cpp"/>
+        <FILE id="lmH" name="LevelMeter.h" compile="0" resource="0" file="Source/ui/LevelMeter.h"/>
       </GROUP>
       <GROUP id="AmStUt" name="util">
         <FILE id="piH" name="ParamIDs.h" compile="0" resource="0" file="Source/util/ParamIDs.h"/>

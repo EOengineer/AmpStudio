@@ -1,7 +1,26 @@
 #include "PluginEditor.h"
 #include "util/ModuleFactory.h"
 #include "util/ParamIDs.h"
+#include "dsp/LevelReference.h"
 #include "dsp/captures/NeuralCapture.h"
+
+namespace
+{
+    void styleDbRotary (juce::Slider& slider)
+    {
+        slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 18);
+        slider.setNumDecimalPlacesToDisplay (1);
+        slider.textFromValueFunction = [] (double v)
+        {
+            return juce::String (v, 1) + " dB";
+        };
+        slider.valueFromTextFunction = [] (const juce::String& t)
+        {
+            return t.upToFirstOccurrenceOf ("dB", false, false).trim().getDoubleValue();
+        };
+    }
+}
 
 AmpStudioAudioProcessorEditor::AmpStudioAudioProcessorEditor (AmpStudioAudioProcessor& p)
     : AudioProcessorEditor (&p),
@@ -12,14 +31,38 @@ AmpStudioAudioProcessorEditor::AmpStudioAudioProcessorEditor (AmpStudioAudioProc
     addAndMakeVisible (libraryPanel);
     addAndMakeVisible (chainStrip);
 
-    masterGainLabel.attachToComponent (&masterGainSlider, false);
-    masterGainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    masterGainSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 60, 18);
-    addAndMakeVisible (masterGainSlider);
-    addAndMakeVisible (masterGainLabel);
+    inputTrimLabel.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (inputTrimLabel);
+    styleDbRotary (inputTrimSlider);
+    addAndMakeVisible (inputTrimSlider);
+    inputTrimAttachment = std::make_unique<SliderAttachment> (
+        audioProcessor.getAPVTS(), ParamIDs::inputTrimDb, inputTrimSlider);
 
+    calibrateButton.onClick = [this]
+    {
+        stickyCalibrateStatus.clear();
+        audioProcessor.startInputCalibration();
+        updateCalibrateStatus();
+    };
+    addAndMakeVisible (calibrateButton);
+
+    calibrateStatusLabel.setJustificationType (juce::Justification::centred);
+    calibrateStatusLabel.setFont (juce::FontOptions (12.0f));
+    calibrateStatusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible (calibrateStatusLabel);
+
+    inputMeter.setShowReferenceTick (true);
+    addAndMakeVisible (inputMeter);
+
+    masterGainLabel.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (masterGainLabel);
+    styleDbRotary (masterGainSlider);
+    addAndMakeVisible (masterGainSlider);
     masterGainAttachment = std::make_unique<SliderAttachment> (
-        audioProcessor.getAPVTS(), ParamIDs::masterGain, masterGainSlider);
+        audioProcessor.getAPVTS(), ParamIDs::masterGainDb, masterGainSlider);
+
+    outputMeter.setShowReferenceTick (false);
+    addAndMakeVisible (outputMeter);
 
     moduleParamsTitle.setFont (juce::FontOptions (16.0f, juce::Font::bold));
     addAndMakeVisible (moduleParamsTitle);
@@ -52,12 +95,15 @@ AmpStudioAudioProcessorEditor::AmpStudioAudioProcessorEditor (AmpStudioAudioProc
     audioProcessor.addChangeListener (this);
     audioProcessor.getChain().addListener (this);
 
-    setSize (960, 560);
+    setSize (1040, 560);
     rebuildParamControls();
+    updateCalibrateStatus();
+    startTimerHz (30);
 }
 
 AmpStudioAudioProcessorEditor::~AmpStudioAudioProcessorEditor()
 {
+    stopTimer();
     audioProcessor.removeChangeListener (this);
     audioProcessor.getChain().removeListener (this);
 }
@@ -82,9 +128,23 @@ void AmpStudioAudioProcessorEditor::resized()
     top.removeFromLeft (12);
 
     auto right = top;
-    auto masterArea = right.removeFromRight (100);
-    masterGainLabel.setBounds (masterArea.removeFromTop (20));
-    masterGainSlider.setBounds (masterArea.removeFromTop (100));
+    auto levelsArea = right.removeFromRight (220);
+    right.removeFromRight (8);
+
+    auto inputCol = levelsArea.removeFromLeft (110);
+    auto outputCol = levelsArea;
+
+    inputTrimLabel.setBounds (inputCol.removeFromTop (18));
+    inputTrimSlider.setBounds (inputCol.removeFromTop (90).reduced (8, 0));
+    calibrateButton.setBounds (inputCol.removeFromTop (28).reduced (4, 2));
+    calibrateStatusLabel.setBounds (inputCol.removeFromTop (32).reduced (2, 0));
+    inputMeter.setBounds (inputCol.reduced (28, 4));
+
+    masterGainLabel.setBounds (outputCol.removeFromTop (18));
+    masterGainSlider.setBounds (outputCol.removeFromTop (90).reduced (8, 0));
+    outputCol.removeFromTop (28);
+    outputCol.removeFromTop (32);
+    outputMeter.setBounds (outputCol.reduced (28, 4));
 
     moduleParamsTitle.setBounds (right.removeFromTop (24));
     right.removeFromTop (4);
@@ -94,6 +154,62 @@ void AmpStudioAudioProcessorEditor::resized()
 
     area.removeFromTop (12);
     chainStrip.setBounds (area);
+}
+
+void AmpStudioAudioProcessorEditor::timerCallback()
+{
+    using ApplyResult = AmpStudioAudioProcessor::CalibrationApplyResult;
+    switch (audioProcessor.applyPendingCalibrationTrim())
+    {
+        case ApplyResult::applied:
+            setStickyCalibrateStatus ("Calibrated to "
+                                      + juce::String (LevelReference::kReferenceRmsDb, 0)
+                                      + " dBFS");
+            break;
+        case ApplyResult::tooQuiet:
+            setStickyCalibrateStatus ("Too quiet — try again");
+            break;
+        case ApplyResult::none:
+            break;
+    }
+
+    inputMeter.setLevels (audioProcessor.getInputPeakDb(), audioProcessor.getInputRmsDb());
+    outputMeter.setLevels (audioProcessor.getOutputPeakDb(), -100.0f);
+    inputMeter.updateBallistics (1.0f / 30.0f);
+    outputMeter.updateBallistics (1.0f / 30.0f);
+
+    updateCalibrateStatus();
+}
+
+void AmpStudioAudioProcessorEditor::setStickyCalibrateStatus (const juce::String& text)
+{
+    stickyCalibrateStatus = text;
+}
+
+void AmpStudioAudioProcessorEditor::updateCalibrateStatus()
+{
+    using State = InputCalibrator::State;
+    const auto state = audioProcessor.getInputCalibrator().getState();
+
+    if (state == State::listening)
+    {
+        calibrateStatusLabel.setText ("Play hard for ~4 s…", juce::dontSendNotification);
+        calibrateButton.setEnabled (false);
+        return;
+    }
+
+    calibrateButton.setEnabled (true);
+
+    if (stickyCalibrateStatus.isNotEmpty())
+    {
+        calibrateStatusLabel.setText (stickyCalibrateStatus, juce::dontSendNotification);
+        return;
+    }
+
+    calibrateStatusLabel.setText ("Target "
+                                      + juce::String (LevelReference::kReferenceRmsDb, 0)
+                                      + " dBFS RMS",
+                                  juce::dontSendNotification);
 }
 
 void AmpStudioAudioProcessorEditor::changeListenerCallback (juce::ChangeBroadcaster*)
