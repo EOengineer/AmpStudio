@@ -65,6 +65,7 @@ private:
 
     juce::Array<ParamBinding> bindings;
     juce::TextButton loadCaptureButton { "Load Capture…" };
+    juce::TextButton loadIrButton { "Load IR…" };
 
     void syncParamsFromBlock();
     void applyBindingToBlock (int bindingIndex);

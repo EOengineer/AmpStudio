@@ -45,6 +45,10 @@
         <GROUP id="AmStAm" name="amps">
           <FILE id="c5H" name="Champ5F1.h" compile="0" resource="0" file="Source/dsp/amps/Champ5F1.h"/>
         </GROUP>
+        <GROUP id="AmStCab" name="cabs">
+          <FILE id="szH" name="SpeakerImpedance.h" compile="0" resource="0" file="Source/dsp/cabs/SpeakerImpedance.h"/>
+          <FILE id="cirH" name="CabIR.h" compile="0" resource="0" file="Source/dsp/cabs/CabIR.h"/>
+        </GROUP>
         <GROUP id="AmStCa" name="captures">
           <FILE id="ncH" name="NeuralCapture.h" compile="0" resource="0" file="Source/dsp/captures/NeuralCapture.h"/>
         </GROUP>

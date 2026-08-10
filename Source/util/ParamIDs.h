@@ -23,6 +23,12 @@ namespace ParamIDs
         inline constexpr const char* volume = "volume";
     }
 
+    namespace CabIR
+    {
+        /** 0 Flat8, 1 Fender Dlx 1x12, 2 Marshall 4x12 GB, 3 Mesa 4x12 V30 */
+        inline constexpr const char* impedancePreset = "cabImpedancePreset";
+    }
+
     namespace NeuralCapture
     {
         inline constexpr const char* inputGain  = "inputGain";
@@ -35,5 +41,6 @@ namespace ModuleIds
     inline constexpr const char* bypass        = "bypass";
     inline constexpr const char* tubeScreamer  = "tubeScreamer";
     inline constexpr const char* champ5F1      = "champ5F1";
+    inline constexpr const char* cabIR         = "cabIR";
     inline constexpr const char* neuralCapture = "neuralCapture";
 }

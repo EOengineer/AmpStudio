@@ -6,15 +6,16 @@ JUCE audio plugin + standalone shell for tube amp / FX modeling experiments.
 
 - AU / VST3 / Standalone (macOS)
 - Fixed 6-slot signal chain with drag-reorder and nudge buttons
-- Library tabs: **FX**, **Amps**, **Captures**
+- Library tabs: **FX**, **Amps**, **Cabs**, **Captures**
 - Modules:
   - **Tube Screamer** — physics-first white-box (oversampled MNA clipper, component mods); see [`docs/tube-screamer.md`](docs/tube-screamer.md)
   - Champ 5F1 (Volume) — stub
+  - **Cab IR** — ≤2048-sample IR loader + synthetic speaker Z(f) presets (`TODO(measured-z)`) for amp coupling
   - Neural Capture (Input / Output + placeholder load)
 - Input trim (dB) + auto-calibrate to the modeling reference
 - Input / output meters
 - Master gain (dB)
-- Electrical adjacency contract between chain slots (TS uses `loadContext` on its output network)
+- Electrical adjacency contract between chain slots (TS `loadContext`; Cab IR publishes Z(f))
 
 ---
 
@@ -39,7 +40,7 @@ The Chain passes **electrical ports** between neighboring *active* slots (empty 
 - **Defaults:** buffered source ≈ **100 Ω**, high-Z input / unloaded ≈ **1 MΩ**. Chain input is treated as an interface (buffered). Levels (−18 dBFS) stay a separate contract.
 - **Per block:** `getOutputPort()` / `getInputLoad()` publish ports; Chain calls `setDriveContext` / `setLoadContext` before `process`.
 - **FX → amp (e.g. Tube Screamer → Champ):** most of the boost is serial audio (level / mids / clip). Low-Z drive is available on the amp’s `driveContext` for a future input network.
-- **Amp → cab:** a future `ModuleCategory::cab` module should publish speaker load Z(f) via `getInputLoad()`; the amp reads `loadContext` in the power section. No cab module yet — the API seam is in place.
+- **Amp → cab:** **Cab IR** publishes speaker load Z(f) via `getInputLoad()` (`SpeakerImpedance` synthetic RLC presets — Flat 8Ω / Fender Dlx 1x12 / Marshall 4x12 GB / Mesa 4x12 V30, marked `TODO(measured-z)`). Amps that consume `loadContext` can stamp that load; Champ stub still ignores it. IR audio path is independent (user WAV/AIFF/FLAC, truncated to **2048** samples).
 - **Neural captures:** publish buffered ports and ignore contexts (loading is baked into the capture).
 
 ---
