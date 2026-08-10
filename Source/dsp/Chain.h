@@ -6,6 +6,9 @@
 /**
  * Fixed-length processing chain with realtime-safe reorder.
  * Slot contents are Block instances; empty slots are BypassBlock.
+ *
+ * Before each active block processes, Chain sets drive/load ElectricalPort
+ * contexts from the previous/next non-bypass neighbors (skips empty slots).
  */
 class Chain
 {
@@ -48,6 +51,12 @@ public:
 private:
     void notifyListeners();
     void ensurePrepared (Block& block);
+
+    /** Apply upstream source + downstream load ports for slot index (bypass skipped). */
+    void applyElectricalContexts (int index);
+
+    int findPreviousActive (int index) const noexcept;
+    int findNextActive (int index) const noexcept;
 
     std::array<BlockPtr, numSlots> slots;
     juce::dsp::ProcessSpec currentSpec {};

@@ -30,9 +30,66 @@ void Chain::process (juce::AudioBuffer<float>& buffer)
 {
     const juce::SpinLock::ScopedLockType lock (processLock);
 
-    for (auto& slot : slots)
-        if (slot != nullptr)
-            slot->process (buffer);
+    for (int i = 0; i < numSlots; ++i)
+    {
+        auto* block = slots[(size_t) i].get();
+
+        if (block == nullptr)
+            continue;
+
+        if (! block->isElectricallyTransparent())
+            applyElectricalContexts (i);
+
+        block->process (buffer);
+    }
+}
+
+int Chain::findPreviousActive (int index) const noexcept
+{
+    for (int i = index - 1; i >= 0; --i)
+    {
+        const auto* block = slots[(size_t) i].get();
+
+        if (block != nullptr && ! block->isElectricallyTransparent())
+            return i;
+    }
+
+    return -1;
+}
+
+int Chain::findNextActive (int index) const noexcept
+{
+    for (int i = index + 1; i < numSlots; ++i)
+    {
+        const auto* block = slots[(size_t) i].get();
+
+        if (block != nullptr && ! block->isElectricallyTransparent())
+            return i;
+    }
+
+    return -1;
+}
+
+void Chain::applyElectricalContexts (int index)
+{
+    auto* block = slots[(size_t) index].get();
+
+    if (block == nullptr)
+        return;
+
+    const int prev = findPreviousActive (index);
+    const int next = findNextActive (index);
+
+    const ElectricalPort drive = prev >= 0
+                                     ? slots[(size_t) prev]->getOutputPort()
+                                     : ElectricalPort::interfaceSource();
+
+    const ElectricalPort load = next >= 0
+                                    ? slots[(size_t) next]->getInputLoad()
+                                    : ElectricalPort::unloaded();
+
+    block->setDriveContext (drive);
+    block->setLoadContext (load);
 }
 
 Block* Chain::getBlock (int index) noexcept

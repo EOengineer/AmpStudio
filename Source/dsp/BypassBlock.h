@@ -3,6 +3,7 @@
 #include "Block.h"
 #include "../util/ParamIDs.h"
 
+/** Empty slot — electrically transparent; Chain skips it when resolving neighbors. */
 class BypassBlock final : public Block
 {
 public:

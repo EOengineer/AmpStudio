@@ -3,7 +3,13 @@
 #include "../Block.h"
 #include "../../util/ParamIDs.h"
 
-/** White-box Tube Screamer stub — identity audio; Drive/Tone/Level params only. */
+/**
+ * White-box Tube Screamer stub — identity audio; Drive/Tone/Level params only.
+ *
+ * Electrical: low-Z buffered output (op-amp). When placed before an amp, the
+ * dominant boost interaction is serial audio (level / mids / clip); the amp may
+ * also read driveContext for input-network authenticity vs a high-Z guitar source.
+ */
 class TubeScreamer final : public Block
 {
 public:
@@ -18,6 +24,9 @@ public:
     juce::String getTypeId() const override { return ModuleIds::tubeScreamer; }
     juce::String getDisplayName() const override { return "Tube Screamer"; }
     ModuleCategory getCategory() const override { return ModuleCategory::fx; }
+
+    ElectricalPort getOutputPort() const override { return ElectricalPort::bufferedSource(); }
+    ElectricalPort getInputLoad() const override  { return ElectricalPort::highZInput(); }
 
     void prepare (const juce::dsp::ProcessSpec&) override {}
     void reset() override {}

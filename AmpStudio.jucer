@@ -19,6 +19,7 @@
       <FILE id="peC" name="PluginEditor.cpp" compile="1" resource="0" file="Source/PluginEditor.cpp"/>
       <GROUP id="AmStDsp" name="dsp">
         <FILE id="blH" name="Block.h" compile="0" resource="0" file="Source/dsp/Block.h"/>
+        <FILE id="epH" name="ElectricalPort.h" compile="0" resource="0" file="Source/dsp/ElectricalPort.h"/>
         <FILE id="byH" name="BypassBlock.h" compile="0" resource="0" file="Source/dsp/BypassBlock.h"/>
         <FILE id="chH" name="Chain.h" compile="0" resource="0" file="Source/dsp/Chain.h"/>
         <FILE id="chC" name="Chain.cpp" compile="1" resource="0" file="Source/dsp/Chain.cpp"/>
