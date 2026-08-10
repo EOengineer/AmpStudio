@@ -10,6 +10,12 @@ namespace ParamIDs
         inline constexpr const char* drive = "drive";
         inline constexpr const char* tone  = "tone";
         inline constexpr const char* level = "level";
+        /** 0 = TS808 output R, 1 = TS9 output R */
+        inline constexpr const char* outputVariant = "tsOutputVariant";
+        /** 0 = 0.047µ Zi C, 1 = 0.1µ more-bass */
+        inline constexpr const char* bassCap = "tsBassCap";
+        /** 0 Si/Si, 1 asym Si, 2 Ge/Si, 3 LED */
+        inline constexpr const char* diodeMode = "tsDiodeMode";
     }
 
     namespace Champ5F1

@@ -7,16 +7,14 @@ JUCE audio plugin + standalone shell for tube amp / FX modeling experiments.
 - AU / VST3 / Standalone (macOS)
 - Fixed 6-slot signal chain with drag-reorder and nudge buttons
 - Library tabs: **FX**, **Amps**, **Captures**
-- Pass-through module stubs:
-  - Tube Screamer (Drive / Tone / Level)
-  - Champ 5F1 (Volume)
+- Modules:
+  - **Tube Screamer** — physics-first white-box (oversampled MNA clipper, component mods); see [`docs/tube-screamer.md`](docs/tube-screamer.md)
+  - Champ 5F1 (Volume) — stub
   - Neural Capture (Input / Output + placeholder load)
 - Input trim (dB) + auto-calibrate to the modeling reference
 - Input / output meters
 - Master gain (dB)
-- Electrical adjacency contract between chain slots (ports only; no Z DSP yet)
-
-Modeling DSP is intentionally not implemented yet.
+- Electrical adjacency contract between chain slots (TS uses `loadContext` on its output network)
 
 ---
 

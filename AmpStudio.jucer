@@ -25,8 +25,22 @@
         <FILE id="chC" name="Chain.cpp" compile="1" resource="0" file="Source/dsp/Chain.cpp"/>
         <FILE id="lrH" name="LevelReference.h" compile="0" resource="0" file="Source/dsp/LevelReference.h"/>
         <FILE id="icH" name="InputCalibrator.h" compile="0" resource="0" file="Source/dsp/InputCalibrator.h"/>
+        <GROUP id="AmStCir" name="circuit">
+          <FILE id="cdH" name="DiodeModel.h" compile="0" resource="0" file="Source/dsp/circuit/DiodeModel.h"/>
+          <FILE id="crH" name="RcFilters.h" compile="0" resource="0" file="Source/dsp/circuit/RcFilters.h"/>
+          <FILE id="cmH" name="MnaNewton.h" compile="0" resource="0" file="Source/dsp/circuit/MnaNewton.h"/>
+          <FILE id="coH" name="Oversampler.h" compile="0" resource="0" file="Source/dsp/circuit/Oversampler.h"/>
+        </GROUP>
         <GROUP id="AmStFx" name="fx">
           <FILE id="tsH" name="TubeScreamer.h" compile="0" resource="0" file="Source/dsp/fx/TubeScreamer.h"/>
+          <GROUP id="AmStTs" name="ts">
+            <FILE id="tscH" name="TsComponents.h" compile="0" resource="0" file="Source/dsp/fx/ts/TsComponents.h"/>
+            <FILE id="tsaH" name="TsClippingAmp.h" compile="0" resource="0" file="Source/dsp/fx/ts/TsClippingAmp.h"/>
+            <FILE id="tstH" name="TsToneLevelStage.h" compile="0" resource="0" file="Source/dsp/fx/ts/TsToneLevelStage.h"/>
+            <FILE id="tseH" name="TsEngine.h" compile="0" resource="0" file="Source/dsp/fx/ts/TsEngine.h"/>
+            <FILE id="tsvH" name="TsGeofexVerify.h" compile="0" resource="0" file="Source/dsp/fx/ts/TsGeofexVerify.h"/>
+            <FILE id="tsbH" name="TsVerifyBootstrap.h" compile="0" resource="0" file="Source/dsp/fx/ts/TsVerifyBootstrap.h"/>
+          </GROUP>
         </GROUP>
         <GROUP id="AmStAm" name="amps">
           <FILE id="c5H" name="Champ5F1.h" compile="0" resource="0" file="Source/dsp/amps/Champ5F1.h"/>
