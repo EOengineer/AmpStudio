@@ -14,6 +14,7 @@ JUCE audio plugin + standalone shell for tube amp / FX modeling experiments.
 - Input trim (dB) + auto-calibrate to the modeling reference
 - Input / output meters
 - Master gain (dB)
+- Electrical adjacency contract between chain slots (ports only; no Z DSP yet)
 
 Modeling DSP is intentionally not implemented yet.
 
@@ -29,6 +30,19 @@ AmpStudio treats **post-trim input level** as the modeling contract:
 - **Master Gain** is output loudness only (dB).
 
 Signal path: `Input → Input Trim → (meter) → Chain → Master Gain → (meter) → Output`.
+
+---
+
+## Electrical adjacency (impedance)
+
+The Chain passes **electrical ports** between neighboring *active* slots (empty / Bypass slots are skipped). Models own the physics; Chain only discovers adjacency.
+
+- **`ElectricalPort`** ([`Source/dsp/ElectricalPort.h`](Source/dsp/ElectricalPort.h)): resistive ohms now; optional `ImpedanceResponse` for frequency-dependent Z (cab speaker curves).
+- **Defaults:** buffered source ≈ **100 Ω**, high-Z input / unloaded ≈ **1 MΩ**. Chain input is treated as an interface (buffered). Levels (−18 dBFS) stay a separate contract.
+- **Per block:** `getOutputPort()` / `getInputLoad()` publish ports; Chain calls `setDriveContext` / `setLoadContext` before `process`.
+- **FX → amp (e.g. Tube Screamer → Champ):** most of the boost is serial audio (level / mids / clip). Low-Z drive is available on the amp’s `driveContext` for a future input network.
+- **Amp → cab:** a future `ModuleCategory::cab` module should publish speaker load Z(f) via `getInputLoad()`; the amp reads `loadContext` in the power section. No cab module yet — the API seam is in place.
+- **Neural captures:** publish buffered ports and ignore contexts (loading is baked into the capture).
 
 ---
 

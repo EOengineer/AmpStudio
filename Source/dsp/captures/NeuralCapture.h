@@ -6,6 +6,10 @@
 /**
  * Black-box / neural capture placeholder — identity audio.
  * Load API is a no-op until we pick a capture format together.
+ *
+ * Electrical: publishes buffered I/O ports and ignores drive/load contexts.
+ * Captures bake whatever loading was present at training time; true Z
+ * interaction cannot be retrofitted through the adjacency contract.
  */
 class NeuralCapture final : public Block
 {
@@ -21,6 +25,9 @@ public:
     juce::String getTypeId() const override { return ModuleIds::neuralCapture; }
     juce::String getDisplayName() const override { return "Neural Capture"; }
     ModuleCategory getCategory() const override { return ModuleCategory::capture; }
+
+    ElectricalPort getOutputPort() const override { return ElectricalPort::bufferedSource(); }
+    ElectricalPort getInputLoad() const override  { return ElectricalPort::highZInput(); }
 
     void prepare (const juce::dsp::ProcessSpec&) override {}
     void reset() override {}
