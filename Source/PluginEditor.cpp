@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "util/ModuleFactory.h"
 #include "util/ParamIDs.h"
+#include "dsp/cabs/CabIR.h"
 #include "dsp/LevelReference.h"
 #include "dsp/captures/NeuralCapture.h"
 #include <cmath>
@@ -93,6 +94,30 @@ AmpStudioAudioProcessorEditor::AmpStudioAudioProcessorEditor (AmpStudioAudioProc
     addAndMakeVisible (loadCaptureButton);
     loadCaptureButton.setVisible (false);
 
+    loadIrButton.onClick = [this]
+    {
+        auto* block = audioProcessor.getChain().getBlock (audioProcessor.getSelectedSlot());
+        auto* cab = dynamic_cast<CabIR*> (block);
+        if (cab == nullptr)
+            return;
+
+        auto chooser = std::make_shared<juce::FileChooser> (
+            "Select a cab impulse response (max 2048 samples used)",
+            juce::File{},
+            "*.wav;*.aif;*.aiff;*.flac");
+
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles,
+                              [chooser, cab] (const juce::FileChooser& fc)
+                              {
+                                  auto file = fc.getResult();
+                                  if (file != juce::File{})
+                                      cab->loadImpulseResponse (file);
+                              });
+    };
+    addAndMakeVisible (loadIrButton);
+    loadIrButton.setVisible (false);
+
     audioProcessor.addChangeListener (this);
     audioProcessor.getChain().addListener (this);
 
@@ -150,6 +175,7 @@ void AmpStudioAudioProcessorEditor::resized()
     moduleParamsTitle.setBounds (right.removeFromTop (24));
     right.removeFromTop (4);
     loadCaptureButton.setBounds (right.removeFromBottom (28));
+    loadIrButton.setBounds (loadCaptureButton.getBounds());
     right.removeFromBottom (4);
     moduleParamsHost.setBounds (right);
 
@@ -238,10 +264,12 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
     if (block == nullptr)
     {
         loadCaptureButton.setVisible (false);
+        loadIrButton.setVisible (false);
         return;
     }
 
     loadCaptureButton.setVisible (block->getTypeId() == ModuleIds::neuralCapture);
+    loadIrButton.setVisible (block->getTypeId() == ModuleIds::cabIR);
 
     enum class ControlKind { continuous, combo, pill };
 
@@ -266,6 +294,10 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
     else if (block->getTypeId() == ModuleIds::champ5F1)
     {
         specs.push_back ({ ParamIDs::Champ5F1::volume, "Volume" });
+    }
+    else if (block->getTypeId() == ModuleIds::cabIR)
+    {
+        specs.push_back ({ ParamIDs::CabIR::impedancePreset, "Z Curve", ControlKind::combo });
     }
     else if (block->getTypeId() == ModuleIds::neuralCapture)
     {
@@ -322,6 +354,13 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
                 combo->addItem ("Asym Si", 2);
                 combo->addItem ("Ge/Si", 3);
                 combo->addItem ("LED", 4);
+            }
+            else if (paramId == ParamIDs::CabIR::impedancePreset)
+            {
+                combo->addItem ("Flat 8Ω", 1);
+                combo->addItem ("Fender Dlx 1x12", 2);
+                combo->addItem ("Marshall 4x12 GB", 3);
+                combo->addItem ("Mesa 4x12 V30", 4);
             }
 
             const int selected = juce::jlimit (0, combo->getNumItems() - 1,

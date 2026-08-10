@@ -33,8 +33,8 @@ private:
 
     AmpStudioAudioProcessor& processor;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
-    juce::ListBox fxList, ampList, captureList;
-    ModuleListModel fxModel, ampModel, captureModel;
+    juce::ListBox fxList, ampList, cabList, captureList;
+    ModuleListModel fxModel, ampModel, cabModel, captureModel;
     juce::Label title { {}, "Library" };
     juce::TextButton loadButton { "Load into selected slot" };
 

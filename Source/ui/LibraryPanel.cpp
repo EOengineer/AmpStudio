@@ -59,6 +59,7 @@ LibraryPanel::LibraryPanel (AmpStudioAudioProcessor& processorToUse)
     : processor (processorToUse),
       fxModel (processorToUse, ModuleCategory::fx),
       ampModel (processorToUse, ModuleCategory::amp),
+      cabModel (processorToUse, ModuleCategory::cab),
       captureModel (processorToUse, ModuleCategory::capture)
 {
     title.setFont (juce::FontOptions (16.0f, juce::Font::bold));
@@ -66,14 +67,17 @@ LibraryPanel::LibraryPanel (AmpStudioAudioProcessor& processorToUse)
 
     fxList.setModel (&fxModel);
     ampList.setModel (&ampModel);
+    cabList.setModel (&cabModel);
     captureList.setModel (&captureModel);
 
     fxList.setRowHeight (28);
     ampList.setRowHeight (28);
+    cabList.setRowHeight (28);
     captureList.setRowHeight (28);
 
     tabs.addTab ("FX", juce::Colours::darkslategrey, &fxList, false);
     tabs.addTab ("Amps", juce::Colours::darkslateblue, &ampList, false);
+    tabs.addTab ("Cabs", juce::Colours::darkcyan, &cabList, false);
     tabs.addTab ("Captures", juce::Colours::darkolivegreen, &captureList, false);
     addAndMakeVisible (tabs);
 
@@ -102,13 +106,13 @@ void LibraryPanel::loadSelectedFromCurrentTab()
     if (model == nullptr || row < 0)
         return;
 
-    // Re-query via category tab index
     ModuleCategory category = ModuleCategory::fx;
     switch (tabs.getCurrentTabIndex())
     {
         case 0: category = ModuleCategory::fx; break;
         case 1: category = ModuleCategory::amp; break;
-        case 2: category = ModuleCategory::capture; break;
+        case 2: category = ModuleCategory::cab; break;
+        case 3: category = ModuleCategory::capture; break;
         default: break;
     }
 
