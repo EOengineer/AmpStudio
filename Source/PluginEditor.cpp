@@ -3,6 +3,7 @@
 #include "util/ParamIDs.h"
 #include "dsp/LevelReference.h"
 #include "dsp/captures/NeuralCapture.h"
+#include <cmath>
 
 namespace
 {
@@ -227,6 +228,8 @@ void AmpStudioAudioProcessorEditor::chainChanged()
 void AmpStudioAudioProcessorEditor::rebuildParamControls()
 {
     paramSliders.clear();
+    paramCombos.clear();
+    paramToggles.clear();
     paramLabels.clear();
     bindings.clear();
     moduleParamsHost.removeAllChildren();
@@ -240,7 +243,15 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
 
     loadCaptureButton.setVisible (block->getTypeId() == ModuleIds::neuralCapture);
 
-    struct Spec { const char* id; const char* label; };
+    enum class ControlKind { continuous, combo, pill };
+
+    struct Spec
+    {
+        const char* id;
+        const char* label;
+        ControlKind kind = ControlKind::continuous;
+    };
+
     std::vector<Spec> specs;
 
     if (block->getTypeId() == ModuleIds::tubeScreamer)
@@ -248,9 +259,9 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
         specs.push_back ({ ParamIDs::TubeScreamer::drive, "Drive" });
         specs.push_back ({ ParamIDs::TubeScreamer::tone,  "Tone" });
         specs.push_back ({ ParamIDs::TubeScreamer::level, "Level" });
-        specs.push_back ({ ParamIDs::TubeScreamer::outputVariant, "808/9" });
-        specs.push_back ({ ParamIDs::TubeScreamer::bassCap, "Bass" });
-        specs.push_back ({ ParamIDs::TubeScreamer::diodeMode, "Diodes" });
+        specs.push_back ({ ParamIDs::TubeScreamer::outputVariant, "808/9", ControlKind::pill });
+        specs.push_back ({ ParamIDs::TubeScreamer::bassCap, "Bass", ControlKind::pill });
+        specs.push_back ({ ParamIDs::TubeScreamer::diodeMode, "Diodes", ControlKind::combo });
     }
     else if (block->getTypeId() == ModuleIds::champ5F1)
     {
@@ -268,59 +279,116 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
     for (size_t i = 0; i < specs.size(); ++i)
     {
         auto* label = paramLabels.add (new juce::Label ({}, specs[i].label));
-        auto* slider = paramSliders.add (new juce::Slider (juce::Slider::RotaryHorizontalVerticalDrag,
-                                                           juce::Slider::TextBoxBelow));
         label->setJustificationType (juce::Justification::centred);
-
-        const juce::String paramId (specs[i].id);
-        const bool isTsMod = block->getTypeId() == ModuleIds::tubeScreamer
-            && (paramId == ParamIDs::TubeScreamer::outputVariant
-                || paramId == ParamIDs::TubeScreamer::bassCap
-                || paramId == ParamIDs::TubeScreamer::diodeMode);
-
-        if (paramId == ParamIDs::TubeScreamer::diodeMode)
-            slider->setRange (0.0, 3.0, 1.0);
-        else if (isTsMod)
-            slider->setRange (0.0, 1.0, 1.0);
-        else
-            slider->setRange (0.0, 1.0, 0.01);
-
-        slider->setValue (block->getParam (specs[i].id, 0.5f),
-                          juce::dontSendNotification);
-
-        const int bindingIndex = bindings.size();
-        bindings.add ({ specs[i].id, slider });
-
-        slider->onValueChange = [this, bindingIndex]
-        {
-            applySliderToBlock (bindingIndex);
-        };
 
         auto col = bounds.removeFromLeft (width);
         label->setBounds (col.removeFromTop (20));
-        slider->setBounds (col.reduced (8));
-
         moduleParamsHost.addAndMakeVisible (label);
-        moduleParamsHost.addAndMakeVisible (slider);
+
+        const juce::String paramId (specs[i].id);
+        const int bindingIndex = bindings.size();
+
+        if (specs[i].kind == ControlKind::pill)
+        {
+            auto* toggle = paramToggles.add (new PillToggle());
+
+            if (paramId == ParamIDs::TubeScreamer::outputVariant)
+                toggle->setOptions ("808", "9");
+            else if (paramId == ParamIDs::TubeScreamer::bassCap)
+                toggle->setOptions ("Stock", "More");
+
+            const int selected = juce::jlimit (0, 1,
+                                               (int) std::lround (block->getParam (specs[i].id, 0.0f)));
+            toggle->setSelectedIndex (selected, juce::dontSendNotification);
+
+            bindings.add ({ specs[i].id, nullptr, nullptr, toggle });
+            toggle->onChange = [this, bindingIndex]
+            {
+                applyBindingToBlock (bindingIndex);
+            };
+
+            auto toggleBounds = col.withSizeKeepingCentre (juce::jmin (col.getWidth() - 8, 110), 28);
+            toggle->setBounds (toggleBounds);
+            moduleParamsHost.addAndMakeVisible (toggle);
+        }
+        else if (specs[i].kind == ControlKind::combo)
+        {
+            auto* combo = paramCombos.add (new juce::ComboBox());
+            combo->setJustificationType (juce::Justification::centred);
+
+            if (paramId == ParamIDs::TubeScreamer::diodeMode)
+            {
+                combo->addItem ("Si/Si", 1);
+                combo->addItem ("Asym Si", 2);
+                combo->addItem ("Ge/Si", 3);
+                combo->addItem ("LED", 4);
+            }
+
+            const int selected = juce::jlimit (0, combo->getNumItems() - 1,
+                                               (int) std::lround (block->getParam (specs[i].id, 0.0f)));
+            combo->setSelectedItemIndex (selected, juce::dontSendNotification);
+
+            bindings.add ({ specs[i].id, nullptr, combo, nullptr });
+            combo->onChange = [this, bindingIndex]
+            {
+                applyBindingToBlock (bindingIndex);
+            };
+
+            combo->setBounds (col.reduced (4, 28));
+            moduleParamsHost.addAndMakeVisible (combo);
+        }
+        else
+        {
+            auto* slider = paramSliders.add (new juce::Slider (juce::Slider::RotaryHorizontalVerticalDrag,
+                                                               juce::Slider::TextBoxBelow));
+            slider->setRange (0.0, 1.0, 0.01);
+            slider->setValue (block->getParam (specs[i].id, 0.5f),
+                              juce::dontSendNotification);
+
+            bindings.add ({ specs[i].id, slider, nullptr, nullptr });
+            slider->onValueChange = [this, bindingIndex]
+            {
+                applyBindingToBlock (bindingIndex);
+            };
+
+            slider->setBounds (col.reduced (8));
+            moduleParamsHost.addAndMakeVisible (slider);
+        }
     }
 
     moduleParamsTitle.setText ("Selected: " + block->getDisplayName(),
                                juce::dontSendNotification);
 }
 
-void AmpStudioAudioProcessorEditor::syncSlidersFromBlock()
+void AmpStudioAudioProcessorEditor::syncParamsFromBlock()
 {
     auto* block = audioProcessor.getChain().getBlock (audioProcessor.getSelectedSlot());
     if (block == nullptr)
         return;
 
     for (auto& binding : bindings)
+    {
         if (binding.slider != nullptr)
+        {
             binding.slider->setValue (block->getParam (binding.paramId, 0.5f),
                                       juce::dontSendNotification);
+        }
+        else if (binding.combo != nullptr)
+        {
+            const int selected = juce::jlimit (0, binding.combo->getNumItems() - 1,
+                                               (int) std::lround (block->getParam (binding.paramId, 0.0f)));
+            binding.combo->setSelectedItemIndex (selected, juce::dontSendNotification);
+        }
+        else if (binding.toggle != nullptr)
+        {
+            const int selected = juce::jlimit (0, 1,
+                                               (int) std::lround (block->getParam (binding.paramId, 0.0f)));
+            binding.toggle->setSelectedIndex (selected, juce::dontSendNotification);
+        }
+    }
 }
 
-void AmpStudioAudioProcessorEditor::applySliderToBlock (int bindingIndex)
+void AmpStudioAudioProcessorEditor::applyBindingToBlock (int bindingIndex)
 {
     if (! juce::isPositiveAndBelow (bindingIndex, bindings.size()))
         return;
@@ -332,4 +400,8 @@ void AmpStudioAudioProcessorEditor::applySliderToBlock (int bindingIndex)
     const auto& binding = bindings.getReference (bindingIndex);
     if (binding.slider != nullptr)
         block->setParam (binding.paramId, (float) binding.slider->getValue());
+    else if (binding.combo != nullptr)
+        block->setParam (binding.paramId, (float) binding.combo->getSelectedItemIndex());
+    else if (binding.toggle != nullptr)
+        block->setParam (binding.paramId, (float) binding.toggle->getSelectedIndex());
 }

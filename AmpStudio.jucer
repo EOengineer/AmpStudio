@@ -57,6 +57,7 @@
         <FILE id="scH" name="SlotComponent.h" compile="0" resource="0" file="Source/ui/SlotComponent.h"/>
         <FILE id="scC" name="SlotComponent.cpp" compile="1" resource="0" file="Source/ui/SlotComponent.cpp"/>
         <FILE id="lmH" name="LevelMeter.h" compile="0" resource="0" file="Source/ui/LevelMeter.h"/>
+        <FILE id="ptH" name="PillToggle.h" compile="0" resource="0" file="Source/ui/PillToggle.h"/>
       </GROUP>
       <GROUP id="AmStUt" name="util">
         <FILE id="piH" name="ParamIDs.h" compile="0" resource="0" file="Source/util/ParamIDs.h"/>

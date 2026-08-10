@@ -113,9 +113,10 @@ public:
     void setTone (float tone01In) noexcept
     {
         tone01 = std::clamp (tone01In, 0.0f, 1.0f);
-        // Geofex: toward (+) = more HF shunt on input (dark); toward (-) = treble
-        const float t1 = tone01 * pot;         // bright side grows with tone
-        const float t2 = (1.0f - tone01) * pot;
+        // tone01: 0 = dark (more HF cut), 1 = bright (less cut / treble)
+        // H(s) = (1 + s C (R8+T2)) / (1 + s C (R8+T1)); larger T1 → lower pole → darker
+        const float t1 = (1.0f - tone01) * pot;
+        const float t2 = tone01 * pot;
         const float rz = rSeries + t2;
         const float rp = rSeries + t1;
         const float T = 1.0f / std::max (sampleRate, 1.0f);
@@ -145,8 +146,9 @@ public:
     static float continuousMagnitude (float potOhms, float rSeries, float cFarads,
                                      float tone01, float freqHz) noexcept
     {
-        const float t1 = std::clamp (tone01, 0.0f, 1.0f) * potOhms;
-        const float t2 = (1.0f - std::clamp (tone01, 0.0f, 1.0f)) * potOhms;
+        const float t = std::clamp (tone01, 0.0f, 1.0f);
+        const float t1 = (1.0f - t) * potOhms;
+        const float t2 = t * potOhms;
         const float w = 2.0f * 3.14159265358979323846f * freqHz;
         const std::complex<float> s (0.0f, w);
         const auto num = 1.0f + s * cFarads * (rSeries + t2);
