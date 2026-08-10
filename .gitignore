@@ -7,3 +7,4 @@ xcuserdata/
 *.pbxuser
 DerivedData/
 *.app
+tools/ts_geofex_verify

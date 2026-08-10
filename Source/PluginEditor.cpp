@@ -248,6 +248,9 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
         specs.push_back ({ ParamIDs::TubeScreamer::drive, "Drive" });
         specs.push_back ({ ParamIDs::TubeScreamer::tone,  "Tone" });
         specs.push_back ({ ParamIDs::TubeScreamer::level, "Level" });
+        specs.push_back ({ ParamIDs::TubeScreamer::outputVariant, "808/9" });
+        specs.push_back ({ ParamIDs::TubeScreamer::bassCap, "Bass" });
+        specs.push_back ({ ParamIDs::TubeScreamer::diodeMode, "Diodes" });
     }
     else if (block->getTypeId() == ModuleIds::champ5F1)
     {
@@ -268,7 +271,20 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
         auto* slider = paramSliders.add (new juce::Slider (juce::Slider::RotaryHorizontalVerticalDrag,
                                                            juce::Slider::TextBoxBelow));
         label->setJustificationType (juce::Justification::centred);
-        slider->setRange (0.0, 1.0, 0.01);
+
+        const juce::String paramId (specs[i].id);
+        const bool isTsMod = block->getTypeId() == ModuleIds::tubeScreamer
+            && (paramId == ParamIDs::TubeScreamer::outputVariant
+                || paramId == ParamIDs::TubeScreamer::bassCap
+                || paramId == ParamIDs::TubeScreamer::diodeMode);
+
+        if (paramId == ParamIDs::TubeScreamer::diodeMode)
+            slider->setRange (0.0, 3.0, 1.0);
+        else if (isTsMod)
+            slider->setRange (0.0, 1.0, 1.0);
+        else
+            slider->setRange (0.0, 1.0, 0.01);
+
         slider->setValue (block->getParam (specs[i].id, 0.5f),
                           juce::dontSendNotification);
 
