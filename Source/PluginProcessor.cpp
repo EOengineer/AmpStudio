@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "dsp/LevelReference.h"
 #include "util/ModuleFactory.h"
 
 AmpStudioAudioProcessor::AmpStudioAudioProcessor()
@@ -12,7 +13,8 @@ AmpStudioAudioProcessor::AmpStudioAudioProcessor()
 #endif
       apvts (*this, nullptr, "PARAMS", createParameterLayout())
 {
-    masterGainParam = apvts.getRawParameterValue (ParamIDs::masterGain);
+    inputTrimParam = apvts.getRawParameterValue (ParamIDs::inputTrimDb);
+    masterGainParam = apvts.getRawParameterValue (ParamIDs::masterGainDb);
 }
 
 AmpStudioAudioProcessor::~AmpStudioAudioProcessor() = default;
@@ -20,11 +22,25 @@ AmpStudioAudioProcessor::~AmpStudioAudioProcessor() = default;
 juce::AudioProcessorValueTreeState::ParameterLayout AmpStudioAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParamIDs::masterGain, 1 },
+        juce::ParameterID { ParamIDs::inputTrimDb, 1 },
+        "Input Trim",
+        juce::NormalisableRange<float> (LevelReference::kInputTrimMinDb,
+                                        LevelReference::kInputTrimMaxDb,
+                                        0.1f),
+        0.0f,
+        juce::AudioParameterFloatAttributes().withLabel ("dB")));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { ParamIDs::masterGainDb, 1 },
         "Master Gain",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f),
-        0.8f));
+        juce::NormalisableRange<float> (LevelReference::kMasterGainMinDb,
+                                        LevelReference::kMasterGainMaxDb,
+                                        0.1f),
+        LevelReference::kMasterGainDefaultDb,
+        juce::AudioParameterFloatAttributes().withLabel ("dB")));
+
     return { params.begin(), params.end() };
 }
 
@@ -78,11 +94,13 @@ void AmpStudioAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     spec.maximumBlockSize = (juce::uint32) samplesPerBlock;
     spec.numChannels = (juce::uint32) getTotalNumOutputChannels();
     chain.prepare (spec);
+    inputCalibrator.prepare (sampleRate);
 }
 
 void AmpStudioAudioProcessor::releaseResources()
 {
     chain.reset();
+    inputCalibrator.reset();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -99,6 +117,54 @@ bool AmpStudioAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
 }
 #endif
 
+void AmpStudioAudioProcessor::measureBufferLevels (const juce::AudioBuffer<float>& buffer,
+                                                   float& peakOut,
+                                                   float& rmsOut) noexcept
+{
+    const int numSamples = buffer.getNumSamples();
+    const int numChannels = buffer.getNumChannels();
+    if (numSamples <= 0 || numChannels <= 0)
+    {
+        peakOut = 0.0f;
+        rmsOut = 0.0f;
+        return;
+    }
+
+    float peak = 0.0f;
+    double sumSquares = 0.0;
+    int gatedSamples = 0;
+    const float gateLinear = juce::Decibels::decibelsToGain (LevelReference::kGateFloorDb);
+    const float gateThreshSq = gateLinear * gateLinear;
+
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        const float* data = buffer.getReadPointer (ch);
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float s = std::abs (data[i]);
+            peak = juce::jmax (peak, s);
+        }
+    }
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float mono = 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch)
+            mono += buffer.getSample (ch, i);
+        mono /= (float) numChannels;
+
+        const float s2 = mono * mono;
+        if (s2 >= gateThreshSq)
+        {
+            sumSquares += (double) s2;
+            ++gatedSamples;
+        }
+    }
+
+    peakOut = peak;
+    rmsOut = gatedSamples > 0 ? (float) std::sqrt (sumSquares / (double) gatedSamples) : 0.0f;
+}
+
 void AmpStudioAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ignoreUnused (midiMessages);
@@ -107,10 +173,61 @@ void AmpStudioAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     for (auto i = getTotalNumInputChannels(); i < getTotalNumOutputChannels(); ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    const float trimDb = inputTrimParam != nullptr ? inputTrimParam->load() : 0.0f;
+    buffer.applyGain (juce::Decibels::decibelsToGain (trimDb));
+
+    float inPeak = 0.0f, inRms = 0.0f;
+    measureBufferLevels (buffer, inPeak, inRms);
+    inputPeakDb.store (juce::Decibels::gainToDecibels (inPeak, -100.0f), std::memory_order_relaxed);
+    inputRmsDb.store (juce::Decibels::gainToDecibels (inRms, -100.0f), std::memory_order_relaxed);
+
+    inputCalibrator.process (buffer, trimDb);
+
     chain.process (buffer);
 
     if (masterGainParam != nullptr)
-        buffer.applyGain (masterGainParam->load());
+        buffer.applyGain (juce::Decibels::decibelsToGain (masterGainParam->load()));
+
+    float outPeak = 0.0f, outRms = 0.0f;
+    measureBufferLevels (buffer, outPeak, outRms);
+    juce::ignoreUnused (outRms);
+    outputPeakDb.store (juce::Decibels::gainToDecibels (outPeak, -100.0f), std::memory_order_relaxed);
+}
+
+void AmpStudioAudioProcessor::startInputCalibration()
+{
+    inputCalibrator.start();
+}
+
+AmpStudioAudioProcessor::CalibrationApplyResult AmpStudioAudioProcessor::applyPendingCalibrationTrim()
+{
+    if (! inputCalibrator.consumeResultReady())
+        return CalibrationApplyResult::none;
+
+    const auto state = inputCalibrator.getState();
+    auto result = CalibrationApplyResult::none;
+
+    if (state == InputCalibrator::State::finishedOk)
+    {
+        if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (ParamIDs::inputTrimDb)))
+        {
+            const float trimDb = inputCalibrator.getPendingTrimDb();
+            const float norm = param->convertTo0to1 (trimDb);
+            param->beginChangeGesture();
+            param->setValueNotifyingHost (norm);
+            param->endChangeGesture();
+        }
+
+        result = CalibrationApplyResult::applied;
+    }
+    else if (state == InputCalibrator::State::finishedTooQuiet)
+    {
+        result = CalibrationApplyResult::tooQuiet;
+    }
+
+    inputCalibrator.acknowledgeFinished();
+    sendChangeMessage();
+    return result;
 }
 
 bool AmpStudioAudioProcessor::hasEditor() const

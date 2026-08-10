@@ -11,9 +11,24 @@ JUCE audio plugin + standalone shell for tube amp / FX modeling experiments.
   - Tube Screamer (Drive / Tone / Level)
   - Champ 5F1 (Volume)
   - Neural Capture (Input / Output + placeholder load)
-- Master gain (the only audible control so far)
+- Input trim (dB) + auto-calibrate to the modeling reference
+- Input / output meters
+- Master gain (dB)
 
 Modeling DSP is intentionally not implemented yet.
+
+---
+
+## Levels
+
+AmpStudio treats **post-trim input level** as the modeling contract:
+
+- **Reference:** `-18 dBFS` gated RMS during typical hard playing (open chords / aggressive strumming). White-box models and neural captures should be authored or trained assuming this level at the chain input.
+- **Input Trim** (`±24 dB`) calibrates the guitar/interface to that reference. Use the **Calibrate** button, then play hard for ~4 seconds; the plugin measures gated RMS and sets trim so the input lands on `-18 dBFS`.
+- **Module knobs** (Level / Volume / Capture Input–Output) are musical controls *after* the contract is met — not the guitar-to-guitar calibrator.
+- **Master Gain** is output loudness only (dB).
+
+Signal path: `Input → Input Trim → (meter) → Chain → Master Gain → (meter) → Output`.
 
 ---
 
@@ -133,7 +148,8 @@ Debug plugin binaries (for DAW installs later) typically appear as:
 2. Double-click a library item (or use **Load into selected slot**)
 3. Drag slots to reorder, or use `<` / `>`
 4. Turn stub knobs — they store state but do not color the sound yet
-5. Master gain does affect level
+5. Adjust **Input Trim** or press **Calibrate** (play hard ~4 s) so the input meter sits near the reference tick
+6. **Master** gain controls output loudness in dB
 
 ---
 

@@ -4,11 +4,13 @@
 #include "PluginProcessor.h"
 #include "ui/LibraryPanel.h"
 #include "ui/ChainStrip.h"
+#include "ui/LevelMeter.h"
 
 class AmpStudioAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                             public juce::DragAndDropContainer,
                                             private juce::ChangeListener,
-                                            private Chain::Listener
+                                            private Chain::Listener,
+                                            private juce::Timer
 {
 public:
     explicit AmpStudioAudioProcessorEditor (AmpStudioAudioProcessor&);
@@ -20,20 +22,34 @@ public:
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void chainChanged() override;
+    void timerCallback() override;
     void rebuildParamControls();
+    void updateCalibrateStatus();
+    void setStickyCalibrateStatus (const juce::String& text);
 
     AmpStudioAudioProcessor& audioProcessor;
+    juce::String stickyCalibrateStatus;
 
     LibraryPanel libraryPanel;
     ChainStrip chainStrip;
+
+    juce::Slider inputTrimSlider;
+    juce::Label inputTrimLabel { {}, "Input Trim" };
+    juce::TextButton calibrateButton { "Calibrate" };
+    juce::Label calibrateStatusLabel;
+    LevelMeter inputMeter;
+
     juce::Slider masterGainSlider;
     juce::Label masterGainLabel { {}, "Master" };
+    LevelMeter outputMeter;
+
     juce::Label moduleParamsTitle { {}, "Selected Module" };
     juce::Component moduleParamsHost;
     juce::OwnedArray<juce::Slider> paramSliders;
     juce::OwnedArray<juce::Label> paramLabels;
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    std::unique_ptr<SliderAttachment> inputTrimAttachment;
     std::unique_ptr<SliderAttachment> masterGainAttachment;
 
     struct ParamBinding

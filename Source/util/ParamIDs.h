@@ -2,7 +2,8 @@
 
 namespace ParamIDs
 {
-    inline constexpr const char* masterGain = "masterGain";
+    inline constexpr const char* inputTrimDb  = "inputTrimDb";
+    inline constexpr const char* masterGainDb = "masterGainDb";
 
     namespace TubeScreamer
     {
