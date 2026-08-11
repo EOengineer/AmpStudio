@@ -49,6 +49,7 @@
             <FILE id="ccH" name="ChampComponents.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampComponents.h"/>
             <FILE id="ctH" name="ChampTriodeStage.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampTriodeStage.h"/>
             <FILE id="cpH" name="ChampPowerStage.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampPowerStage.h"/>
+            <FILE id="cdH" name="ChampDsp.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampDsp.h"/>
             <FILE id="ceH" name="ChampEngine.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampEngine.h"/>
             <FILE id="cvH" name="ChampVerify.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampVerify.h"/>
             <FILE id="cbH" name="ChampVerifyBootstrap.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampVerifyBootstrap.h"/>

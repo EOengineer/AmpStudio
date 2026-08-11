@@ -18,7 +18,7 @@ namespace champ
  * tube Newton sees Re only; ipAc drives motional Z (Res||Ces||Les) for vs/NFB
  * plus a lossy Le (sL||Reddy) on speaker volts only (not NFB).
  *
- * loadContext → cab::resolveLoadRlc in ChampEngine (flat 8 Ω when unloaded).
+ * loadContext → cab::resolveLoadRlc in ChampEngine / ChampDsp (flat 8 Ω when unloaded).
  */
 class ChampPowerStage
 {

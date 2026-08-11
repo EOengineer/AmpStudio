@@ -1,4 +1,4 @@
-// Standalone Champ 5F1 schematic / Newton checks (no JUCE).
+// Standalone Champ 5F1 schematic + ChampDsp host-path checks (no JUCE).
 // Build: clang++ -std=c++17 -O2 -I Source tools/champ_verify_main.cpp -o tools/champ_verify
 
 #include "dsp/amps/champ/ChampVerify.h"

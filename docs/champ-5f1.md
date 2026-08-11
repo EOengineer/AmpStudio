@@ -49,6 +49,37 @@ Coupling caps are seeded at **equilibrium** after each triode settles (`vC = Vp_
 
 Tube islands run at **base sample rate**. 4× `circuit::Oversampler` is deferred: the same stages pass `champ_verify`, but JUCE half-band OS has zeroed this amp in-host. Re-enable OS only after the base-rate plugin path is audible. Debug builds `DBG` in/out peaks on the first few blocks.
 
+## How we change this model
+
+Do **not** pile Ig + a new 6V6 law + oversampling in one pass. That bounced between bitcrush and silence while `champ_verify` stayed green (it used to rewire stages by hand, missing volume, the ±2 clamp, and the 1-sample NFB delay).
+
+Rules:
+
+1. **One electrical change per slice.** Host listen is the gate, not `champ_verify` alone.
+2. **Mute or hash → revert that slice immediately.** Do not “fix forward” by adding clamps, `lastGood` holds, or oversampling.
+3. **Never wrap Champ in `circuit::Oversampler` to debug.** JUCE half-band OS has muted this amp in-host.
+4. **`champ_verify` must tick `ChampDsp::processSample`** — the same function the plugin runs. Necessary, not sufficient.
+
+```text
+golden cab-Z HEAD → ChampDsp + probes → host listen
+  → one physics change → champ_verify → host listen
+  → audible and not crushed? commit : revert that slice
+```
+
+## Parked physics (later slices, one each)
+
+Only after the host-path probes stay green and the plugin still sounds like HEAD.
+
+1. NFB anti-alias LPF (~2–3 kHz on the sense tap) — stability margin before any gm increase
+2. Soften 6V6 cutoff in `BeamPowerTube` (`drive <= 0 → Ip = 0` is a hard gate)
+3. Soften grid windows (tanh) — clamps stay, edges less crunchy
+4. Grid current **with clamps still on** — Ig must not 1-sample-snap
+5. gm-matched 6V6 plate — scale to Child-law gm at idle before a full Koren swap; Nyquist idle check is stop-ship
+6. Oversample tube islands only — still deferred until base-rate host stays audible
+7. 5Y3 sag — Deep control, not this milestone
+
+Never combine 4 and 5 in one change.
+
 ## Key files
 
 | File | Role |
@@ -56,7 +87,8 @@ Tube islands run at **base sample rate**. 4× `circuit::Oversampler` is deferred
 | [`ChampComponents.h`](../Source/dsp/amps/champ/ChampComponents.h) | Named 5F1 parts + anchors |
 | [`ChampTriodeStage.h`](../Source/dsp/amps/champ/ChampTriodeStage.h) | 12AX7 Newton island + CouplingHp |
 | [`ChampPowerStage.h`](../Source/dsp/amps/champ/ChampPowerStage.h) | 6V6 + AC OT + speaker RLC |
-| [`ChampEngine.h`](../Source/dsp/amps/champ/ChampEngine.h) | Base-rate path; OT load from `resolveLoadRlc` |
+| [`ChampDsp.h`](../Source/dsp/amps/champ/ChampDsp.h) | Canonical base-rate `processSample` (JUCE-free) |
+| [`ChampEngine.h`](../Source/dsp/amps/champ/ChampEngine.h) | AudioBuffer façade; OT load from `resolveLoadRlc` |
 | [`Champ5F1.h`](../Source/dsp/amps/Champ5F1.h) | `Block` façade |
 | [`TubeModel.h`](../Source/dsp/circuit/TubeModel.h) | Koren 12AX7 + beam 6V6 |
 | [`SpeakerRlc.h`](../Source/dsp/cabs/SpeakerRlc.h) | Synthetic Z(f) presets |
@@ -68,9 +100,18 @@ clang++ -std=c++17 -O2 -I Source tools/champ_verify_main.cpp -o tools/champ_veri
 ./tools/champ_verify
 ```
 
-Checks: coupling corners, NFB ratio, OT n, solved 12AX7/6V6 idle, flat-8 / reactive Z Newton smoke, volume taper, an **end-to-end base-rate audio probe** with NFB Off (seeded coupling, all stages finite, non-zero AC RMS into resistive 8 Ω), **NFB Stock quieter than Off**, and the same NFB check into **Fender Dlx 1x12** and **Mesa 4x12** Z(f).
+Offline checks drive **`ChampDsp`** (not a parallel stage graph). That includes:
 
-Debug plugin builds also `DBG` the report once from `Champ5F1::prepare`.
+- Schematic anchors: coupling corners, NFB ratio, OT n, 12AX7/6V6 idle, flat-8 / Mesa |Z|
+- **Host-path audio** into resistive 8 Ω (seeded coupling, finite, audible RMS)
+- **Idle Nyquist / runaway** (sign-flip rate + difference-energy; catches the ultrasonic lock that sounded like silence)
+- **Hold / snap** (input moving but output stuck; per-sample |Δvs| / |Δac|)
+- **Volume 0.5 still audible** (plugin default) and louder at vol 1
+- **NFB Stock quieter than Off** (small-signal; high drive saturates the 6V6 window)
+- Same NFB + stability checks into **Fender Dlx 1x12** and **Mesa 4x12** Z(f)
+- **Golden RMS bands** (~0.5×–2× of the cab-Z HEAD capture) so later physics cannot collapse to silence
+
+A passing report does **not** replace a host listen (Champ alone, Champ + Cab IR, NFB Stock/Off, volume mid/up). Debug plugin builds also `DBG` the report once from `Champ5F1::prepare` — a failed check must not `jassert` / mute the amp.
 
 ## Electrical ports
 
