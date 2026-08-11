@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../../cabs/SpeakerImpedance.h"
-#include "../../circuit/Oversampler.h"
 #include "ChampComponents.h"
 #include "ChampPowerStage.h"
 #include "ChampTriodeStage.h"
@@ -11,36 +10,37 @@
 namespace champ
 {
 /**
- * Champ 5F1 signal path:
- *   input LPF → V1A → coupling → volume → V1B (+NFB) → coupling → 6V6+OT → speaker
+ * Champ 5F1 at base sample rate (same path as champ_verify).
  *
- * Nonlinear islands run at 4×. loadContext → resolveLoadRlc for OT secondary
- * (flat 8 Ω when unloaded; cab Z(f) when Cab IR follows).
+ * juce::dsp::Oversampling has muted this amp in-host while the identical
+ * stages pass offline; 4× OS is deferred until this path is audible.
+ *
+ * Stripped vs full 5F1: Hi jack, no 5Y3, resistive 8 Ω, NFB open
+ * (re-enable once audio is confirmed).
  */
 class ChampEngine
 {
 public:
-    static constexpr size_t kOversampleFactor = circuit::Oversampler::kDefaultFactor;
     /** Approximate Miller C at V1A grid for stopper LPF. */
     static constexpr float kMillerC = 100.0e-12f;
 
     void prepare (const juce::dsp::ProcessSpec& spec)
     {
         baseSpec = spec;
-        oversampler.prepare ({ spec.sampleRate, spec.maximumBlockSize, 1 }, kOversampleFactor);
-        const float osRate = oversampler.getOversampledSampleRate();
-        rebuildStages (osRate);
+        rebuildStages ((float) std::max (spec.sampleRate, 1.0));
         reset();
+        dbgBlocks = 0;
     }
 
     void reset()
     {
-        oversampler.reset();
         inputFilter.reset();
         v1a.reset();
         couple1.reset();
+        couple1.seedFromPlate (v1a.getPlate());
         v1b.reset();
         couple2.reset();
+        couple2.seedFromPlate (v1b.getPlate());
         power.reset();
         lastSpeakerV = 0.0f;
     }
@@ -54,30 +54,25 @@ public:
     {
         components = c;
         if (baseSpec.sampleRate > 0.0)
-            rebuildStages (oversampler.getOversampledSampleRate());
+            rebuildStages ((float) baseSpec.sampleRate);
     }
 
     ComponentSet& getComponentSet() noexcept { return components; }
     const ComponentSet& getComponentSet() const noexcept { return components; }
 
-    /** Stamp OT secondary from chain load (cab Z(f) or flat 8 Ω). */
-    void setLoadContext (const ElectricalPort& load) noexcept
+    /** Resistive 8 Ω only until in-host audio is proven. */
+    void setLoadContext (const ElectricalPort&) noexcept
     {
-        power.setSpeakerRlc (cab::resolveLoadRlc (load));
+        power.setSpeakerRlc (cab::makePreset (cab::ImpedancePreset::flat8));
     }
 
     float getInputZohms() const noexcept { return components.gridLeakR; }
-    float getOutputZohms() const noexcept
-    {
-        return power.getSpeakerRlc().nominalOhms;
-    }
-
-    int getLatencySamples() const noexcept { return oversampler.getLatencySamples(); }
+    float getOutputZohms() const noexcept { return Comp::kOtSecondaryZ; }
+    int getLatencySamples() const noexcept { return 0; }
 
     ChampTriodeStage& getV1a() noexcept { return v1a; }
     ChampTriodeStage& getV1b() noexcept { return v1b; }
     ChampPowerStage& getPower() noexcept { return power; }
-    circuit::Oversampler& getOversampler() noexcept { return oversampler; }
 
     void process (juce::AudioBuffer<float>& buffer)
     {
@@ -87,57 +82,75 @@ public:
             return;
 
         auto* left = buffer.getWritePointer (0);
-
-        juce::dsp::AudioBlock<float> block (buffer);
-        auto monoBlock = block.getSingleChannelBlock (0);
-        auto osBlock = oversampler.processSamplesUp (monoBlock);
-        const int osNum = (int) osBlock.getNumSamples();
-        auto* os = osBlock.getChannelPointer (0);
-
         const float vol = volumeFraction (volume);
 
-        for (int i = 0; i < osNum; ++i)
+        float inPeak = 0.0f;
+        float outPeak = 0.0f;
+
+        for (int i = 0; i < numSamples; ++i)
         {
-            float g = digitalToVolts (os[i]);
+            inPeak = std::max (inPeak, std::abs (left[i]));
+
+            float g = digitalToVolts (left[i]);
             g = inputFilter.process (g);
 
             const float p1 = v1a.processSample (g, 0.0f);
             float ac1 = couple1.processFromPlate (p1);
             ac1 *= vol;
 
-            // NFB from previous speaker sample (1-sample @ OS rate — fine at 4×)
-            const float p2 = v1b.processSample (ac1, lastSpeakerV);
-            float ac2 = couple2.processFromPlate (p2);
+            const float p2 = v1b.processSample (ac1, 0.0f); // NFB open
+            const float ac2 = couple2.processFromPlate (p2);
 
             lastSpeakerV = power.processSample (ac2);
-            os[i] = speakerVoltsToDigital (lastSpeakerV);
+            float out = speakerVoltsToDigital (lastSpeakerV);
+            if (! std::isfinite (out))
+                out = 0.0f;
+            out = std::clamp (out, -2.0f, 2.0f);
+            left[i] = out;
+            outPeak = std::max (outPeak, std::abs (out));
         }
-
-        oversampler.processSamplesDown (monoBlock);
 
         for (int ch = 1; ch < numCh; ++ch)
             buffer.copyFrom (ch, 0, buffer, 0, 0, numSamples);
+
+#if JUCE_DEBUG
+        if (dbgBlocks < 8)
+        {
+            DBG ("Champ 5F1 block " << dbgBlocks
+                 << " inPeak=" << inPeak
+                 << " outPeak=" << outPeak
+                 << " vol=" << vol
+                 << " Vp1=" << v1a.getPlate()
+                 << " Vp2=" << v1b.getPlate()
+                 << " Vs=" << lastSpeakerV);
+            ++dbgBlocks;
+        }
+#endif
     }
 
 private:
-    void rebuildStages (float osRate)
+    void rebuildStages (float fs)
     {
-        inputFilter.prepare (components.gridStopperR, kMillerC, osRate);
-        v1a.prepare (osRate, components.v1aPlateR, components.v1aCathodeR,
+        inputFilter.prepare (components.gridStopperR, kMillerC, fs);
+        v1a.prepare (fs, components.v1aPlateR, components.v1aCathodeR,
                      components.v1aBypassC, components.bplusPreamp, 0.0f);
-        couple1.prepare (components.couplingC1, components.volumePotR, osRate);
-        v1b.prepare (osRate, components.v1bPlateR, components.v1bCathodeR,
-                     1.0e-12f, // essentially unbypassed (tiny C)
-                     components.bplusPreamp, components.nfbR);
-        couple2.prepare (components.couplingC2, components.powerGridLeakR, osRate);
-        power.prepare (osRate, components);
+        couple1.prepare (components.couplingC1, components.volumePotR, fs);
+        // NFB resistor omitted until the open-loop path is audible in-host.
+        v1b.prepare (fs, components.v1bPlateR, components.v1bCathodeR,
+                     1.0e-12f,
+                     components.bplusPreamp, 0.0f);
+        couple2.prepare (components.couplingC2, components.powerGridLeakR, fs);
+        power.prepare (fs, components);
+        power.setSpeakerRlc (cab::makePreset (cab::ImpedancePreset::flat8));
+        couple1.seedFromPlate (v1a.getPlate());
+        couple2.seedFromPlate (v1b.getPlate());
     }
 
     juce::dsp::ProcessSpec baseSpec {};
     ComponentSet components;
     float volume = 0.5f;
     float lastSpeakerV = 0.0f;
-    circuit::Oversampler oversampler;
+    int dbgBlocks = 0;
     GridInputFilter inputFilter;
     ChampTriodeStage v1a;
     CouplingHp couple1;

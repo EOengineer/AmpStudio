@@ -21,12 +21,14 @@ struct TriodeKoren
     float plateCurrent (float vgk, float vak) const noexcept
     {
         const float va = std::max (vak, 0.0f);
-        const float logArg = 1.0f + std::exp (kp * (1.0f / mu + vgk / std::sqrt (kp * kp + va * va)));
-        // Avoid log(0); exp path is always > 1
-        float e1 = (va / kp) * std::log (logArg);
+        const float sqrtTerm = std::sqrt (std::max (kvb, 0.0f) + va * va);
+        const float expArg = kp * (1.0f / std::max (mu, 1.0f) + vgk / std::max (sqrtTerm, 1.0e-6f));
+        const float clamped = std::clamp (expArg, -80.0f, 80.0f);
+        float e1 = (va / std::max (kp, 1.0f)) * std::log1p (std::exp (clamped));
         if (e1 < 0.0f)
             e1 = 0.0f;
-        return std::pow (e1, ex) / kg1;
+        const float ip = std::pow (e1, ex) / std::max (kg1, 1.0f);
+        return std::isfinite (ip) ? ip : 0.0f;
     }
 
     /** dIp/dVgk and dIp/dVak via central differences (island size is tiny). */

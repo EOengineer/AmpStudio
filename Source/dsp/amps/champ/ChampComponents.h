@@ -6,8 +6,8 @@
 namespace champ
 {
 /**
- * Named Fender Champ 5F1 parts (Weber / Robinette / factory schematic).
- * V1A cathode bypass included — common factory fit; missing on some prints.
+ * Named Fender Champ 5F1 parts (factory K-EE / K-8E, Weber, Robinette).
+ * V1A cathode bypass included — common factory fit; missing on some K-EE prints.
  */
 namespace Comp
 {
@@ -93,8 +93,8 @@ struct ComponentSet
 /** Guitar digital ↔ grid volts (same −18 dBFS contract as TS). */
 inline constexpr float kVoltsPerFullScale = 1.0f;
 
-/** Speaker volts → digital (clean Champ ~few Vrms into 8 Ω). */
-inline constexpr float kSpeakerVoltsFullScale = 12.0f;
+/** Speaker volts → digital. 4 V peak ≈ 0 dBFS so a small Champ is obviously audible. */
+inline constexpr float kSpeakerVoltsFullScale = 4.0f;
 
 inline float digitalToVolts (float x) noexcept { return x * kVoltsPerFullScale; }
 inline float voltsToDigital (float v) noexcept { return v / kVoltsPerFullScale; }

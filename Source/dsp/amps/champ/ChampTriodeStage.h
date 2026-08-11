@@ -6,6 +6,7 @@
 #include "ChampComponents.h"
 #include <array>
 #include <cmath>
+#include <algorithm>
 
 namespace champ
 {
@@ -46,7 +47,11 @@ public:
         for (int i = 0; i < 24; ++i)
             processSample (0.0f, 0.0f);
 
-        // Re-anchor bypass history to the solved DC cathode (zero cap current).
+        // Re-anchor bypass to zero cap current, then settle again at DC.
+        bypass.vPrev = vk;
+        bypass.iEq = bypass.geq * vk;
+        for (int i = 0; i < 16; ++i)
+            processSample (0.0f, 0.0f);
         bypass.vPrev = vk;
         bypass.iEq = bypass.geq * vk;
     }
@@ -54,6 +59,11 @@ public:
     /** Process one sample. vinGrid = grid volts (AC), vSpeaker for NFB (0 if unused). */
     float processSample (float vinGrid, float vSpeaker = 0.0f) noexcept
     {
+        // Grid-to-ground window (leak at 0 V). Blocks coupling-cap DC dumps.
+        vinGrid = std::clamp (vinGrid, -5.0f, 1.0f);
+        if (! std::isfinite (vSpeaker))
+            vSpeaker = 0.0f;
+
         std::array<float, 2> x { vp, vk };
         circuit::NewtonSolver<2> newton;
         newton.maxIterations = 10;
@@ -65,7 +75,7 @@ public:
         {
             const float vpX = xIn[0];
             const float vkX = xIn[1];
-            const float vgk = vinGrid - vkX;
+            const float vgk = std::clamp (vinGrid - vkX, -5.0f, 1.0f);
             const float vak = vpX - vkX;
 
             float gG = 0.0f, gP = 0.0f;
@@ -98,6 +108,9 @@ public:
         };
 
         newton.solve (x, fill);
+        if (! std::isfinite (x[0]) || ! std::isfinite (x[1]))
+            return vp;
+
         vp = x[0];
         vk = x[1];
         bypass.advance (vk);
@@ -140,11 +153,20 @@ public:
         dcIn = 0.0f;
     }
 
-    /** Strip DC from plate then HPF; returns AC volts. */
+    /**
+     * Equilibrium of the series coupling cap: vC = Vp_idle so grid AC starts at 0.
+     * Call after the driving triode has settled, and after any coupler reset().
+     */
+    void seedFromPlate (float plateVolts) noexcept
+    {
+        dcIn = plateVolts;
+        x1 = 0.0f;
+        y1 = 0.0f;
+    }
+
+    /** AC through the coupling cap (plate minus seeded idle DC, then HPF). */
     float processFromPlate (float plateVolts) noexcept
     {
-        // Track slow DC so first samples aren't a huge step
-        dcIn += 0.001f * (plateVolts - dcIn);
         const float x = plateVolts - dcIn;
         const float y = b0 * x + b1 * x1 - a1 * y1;
         x1 = x;

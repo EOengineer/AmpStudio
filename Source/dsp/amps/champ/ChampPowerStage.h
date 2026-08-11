@@ -5,6 +5,7 @@
 #include "../../circuit/RcFilters.h"
 #include "../../circuit/TubeModel.h"
 #include "ChampComponents.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -77,9 +78,23 @@ public:
     /** @param vg 6V6 grid AC volts; @return speaker secondary AC volts */
     float processSample (float vg) noexcept
     {
-        if (! useLe && ! useMech)
-            return processResistive (vg);
-        return processReactive (vg);
+        // Grid leak at 0 V; window keeps vgk in roughly −55…0 around cathode bias.
+        vg = std::clamp (vg, -40.0f, 2.0f);
+
+        const float y = (! useLe && ! useMech) ? processResistive (vg)
+                                               : processReactive (vg);
+        if (! std::isfinite (y) || ! std::isfinite (vs) || ! std::isfinite (vk))
+        {
+            vs = lastGoodVs;
+            vk = lastGoodVk;
+            vCoil = lastGoodVCoil;
+            return lastGoodVs;
+        }
+
+        lastGoodVs = vs;
+        lastGoodVk = vk;
+        lastGoodVCoil = vCoil;
+        return vs;
     }
 
     float getSpeakerVolts() const noexcept { return vs; }
@@ -108,6 +123,9 @@ private:
         // Warm bypass cap to VkDc
         cathodeBypass.vPrev = vkDc;
         cathodeBypass.iEq = cathodeBypass.geq * vkDc;
+        lastGoodVs = vs;
+        lastGoodVk = vk;
+        lastGoodVCoil = vCoil;
     }
 
     float processResistive (float vg) noexcept
@@ -149,6 +167,9 @@ private:
         };
 
         newton.solve (x, fill);
+        if (! std::isfinite (x[0]) || ! std::isfinite (x[1]))
+            return lastGoodVs;
+
         vs = x[0];
         vk = x[1];
         cathodeBypass.advance (vk);
@@ -242,6 +263,9 @@ private:
         };
 
         newton.solve (x, fill);
+        if (! std::isfinite (x[0]) || ! std::isfinite (x[1]) || ! std::isfinite (x[2]))
+            return lastGoodVs;
+
         vs = x[0];
         vk = x[1];
         vCoil = x[2];
@@ -265,6 +289,7 @@ private:
     float gre = 0.125f;
     float gres = 0.0f;
     float vs = 0.0f, vk = 19.0f, vCoil = 0.0f;
+    float lastGoodVs = 0.0f, lastGoodVk = 19.0f, lastGoodVCoil = 0.0f;
     float vkDc = 19.0f, vakDc = 340.0f, ipDc = 0.04f;
     bool useLe = false;
     bool useMech = false;
