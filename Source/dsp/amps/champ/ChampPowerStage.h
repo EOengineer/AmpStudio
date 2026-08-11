@@ -14,8 +14,9 @@ namespace champ
 /**
  * 6V6GT + ideal OT into speaker secondary (AC-coupled through the transformer).
  *
- * DC bias is solved with Vs=0 (magnetizing path carries idle Ip). Audio uses
- * ipAc = Ip − IpDc into the secondary Z (Re + Le + Res||Ces||Les).
+ * DC bias is solved with Vs=0 (magnetizing path carries idle Ip). Audio:
+ * tube Newton sees Re only; ipAc drives motional Z (Res||Ces||Les) for vs/NFB
+ * plus a lossy Le (sL||Reddy) on speaker volts only (not NFB).
  *
  * loadContext → cab::resolveLoadRlc in ChampEngine (flat 8 Ω when unloaded).
  */
@@ -44,9 +45,14 @@ public:
 
         useLe = speaker.le > 1.0e-6f;
         if (useLe)
-            leTrap.prepare (speaker.le, fs);
+        {
+            // Eddy R puts the Le pole ~8 kHz so |Z| saturates (no Nyquist spike).
+            const float reddy = 2.0f * 3.14159265f * kEddyCornerHz * speaker.le;
+            lossyLe.prepare (speaker.le, reddy, fs);
+            lossyLe.prime (lastIs);
+        }
         else
-            leTrap.reset();
+            lossyLe.reset();
 
         const bool openMech = speaker.res > 1.0e6f || speaker.res < 0.1f;
         useMech = ! openMech;
@@ -62,18 +68,26 @@ public:
             cesTrap.reset();
             lesTrap.reset();
         }
+
+        if (useMech)
+            primeReactiveTraps (lastIs);
     }
 
     void reset() noexcept
     {
         cathodeBypass.reset();
-        leTrap.reset();
+        lossyLe.reset();
         cesTrap.reset();
         lesTrap.reset();
         vs = 0.0f;
+        vsTube = 0.0f;
         vCoil = 0.0f;
+        nfbSense = 0.0f;
+        lastIs = 0.0f;
         settleBias();
     }
+
+    static constexpr float kMaxSpeakerV = 40.0f;
 
     /** @param vg 6V6 grid AC volts; @return speaker secondary AC volts */
     float processSample (float vg) noexcept
@@ -81,23 +95,44 @@ public:
         // Grid leak at 0 V; window keeps vgk in roughly −55…0 around cathode bias.
         vg = std::clamp (vg, -40.0f, 2.0f);
 
-        const float y = (! useLe && ! useMech) ? processResistive (vg)
-                                               : processReactive (vg);
-        if (! std::isfinite (y) || ! std::isfinite (vs) || ! std::isfinite (vk))
+        // Tube Newton always sees Re (the stable flat-8 path). Motional Z and
+        // lossy Le are linear filters on is.
+        const float y = processResistive (vg);
+        if (! std::isfinite (y) || ! std::isfinite (vsTube) || ! std::isfinite (vk)
+            || std::abs (vsTube) > kMaxSpeakerV)
         {
             vs = lastGoodVs;
             vk = lastGoodVk;
             vCoil = lastGoodVCoil;
+            nfbSense = lastGoodNfbSense;
+            return lastGoodVs;
+        }
+
+        if (useMech || useLe)
+            applyLinearZ (lastIs);
+        else
+        {
+            vs = vsTube;
+            nfbSense = vsTube;
+        }
+
+        if (! std::isfinite (vs) || std::abs (vs) > kMaxSpeakerV)
+        {
+            vs = lastGoodVs;
+            nfbSense = lastGoodNfbSense;
             return lastGoodVs;
         }
 
         lastGoodVs = vs;
         lastGoodVk = vk;
         lastGoodVCoil = vCoil;
+        lastGoodNfbSense = nfbSense;
         return vs;
     }
 
     float getSpeakerVolts() const noexcept { return vs; }
+    /** NFB tap: Re + Zmech (lossy Le is on vs only). */
+    float getNfbSenseVolts() const noexcept { return nfbSense; }
     float getCathode() const noexcept { return vk; }
     float getTurnsRatio() const noexcept { return n; }
     float getIdlePlateCurrent() const noexcept { return ipDc; }
@@ -126,11 +161,12 @@ private:
         lastGoodVs = vs;
         lastGoodVk = vk;
         lastGoodVCoil = vCoil;
+        lastGoodNfbSense = nfbSense;
     }
 
     float processResistive (float vg) noexcept
     {
-        std::array<float, 2> x { vs, vk };
+        std::array<float, 2> x { vsTube, vk };
         circuit::NewtonSolver<2> newton;
         newton.maxIterations = 12;
         newton.absTol = 1.0e-7f;
@@ -166,118 +202,44 @@ private:
             j[3] = dIp_dVk - gk - cathodeBypass.geq;
         };
 
-        newton.solve (x, fill);
-        if (! std::isfinite (x[0]) || ! std::isfinite (x[1]))
+        const auto result = newton.solve (x, fill);
+        if (! std::isfinite (x[0]) || ! std::isfinite (x[1])
+            || std::abs (x[0]) > kMaxSpeakerV
+            || result.residualNorm > 1.0f)
             return lastGoodVs;
 
-        vs = x[0];
+        vsTube = x[0];
         vk = x[1];
+        const float vgk = vg - vk;
+        const float vak = vakDc - n * vsTube - (vk - vkDc);
+        lastIs = n * (tube.plateCurrent (vgk, vak) - ipDc);
         cathodeBypass.advance (vk);
-        return vs;
+        return vsTube;
     }
 
-    float processReactive (float vg) noexcept
+    /** Zero motional drop at the current is so a curve change does not click. */
+    void primeReactiveTraps (float is) noexcept
     {
-        std::array<float, 3> x { vs, vk, vCoil };
-        circuit::NewtonSolver<3> newton;
-        newton.maxIterations = 12;
-        newton.absTol = 1.0e-7f;
+        lesTrap.iEq = 0.0f;
+        cesTrap.iEq = -is;
+        vCoil = 0.0f;
+    }
 
-        const auto fill = [&] (const std::array<float, 3>& xIn,
-                               std::array<float, 3>& f,
-                               std::array<float, 3 * 3>& j)
-        {
-            const float vsX = xIn[0];
-            const float vkX = xIn[1];
-            const float vcX = xIn[2];
-
-            const float vgk = vg - vkX;
-            const float vak = vakDc - n * vsX - (vkX - vkDc);
-
-            float gG = 0.0f, gP = 0.0f;
-            const float ip = tube.plateCurrent (vgk, vak);
-            tube.plateConductances (vgk, vak, gG, gP);
-            const float ipAc = ip - ipDc;
-            const float is = n * ipAc;
-
-            const float icath = cathodeBypass.geq * vkX - cathodeBypass.iEq;
-            const float iRe = (vsX - vcX) * gre;
-
-            float iLe = 0.0f;
-            float gLe = 0.0f;
-            if (useLe)
-            {
-                iLe = leTrap.current (vcX);
-                gLe = leTrap.geq;
-            }
-
-            float iMech = 0.0f;
-            float gMech = 0.0f;
-            if (useMech)
-            {
-                const float iCes = cesTrap.geq * vcX - cesTrap.iEq;
-                const float iLes = lesTrap.current (vcX);
-                iMech = vcX * gres + iCes + iLes;
-                gMech = gres + cesTrap.geq + lesTrap.geq;
-            }
-
-            const float dIp_dVs = gP * (-n);
-            const float dIp_dVk = -gG - gP;
-
-            if (! useLe)
-            {
-                f[0] = iRe - is;
-                f[1] = ip - vkX * gk - icath;
-                f[2] = iRe - iMech;
-
-                j[0] = gre - n * dIp_dVs;
-                j[1] = -n * dIp_dVk;
-                j[2] = -gre;
-
-                j[3] = dIp_dVs;
-                j[4] = dIp_dVk - gk - cathodeBypass.geq;
-                j[5] = 0.0f;
-
-                j[6] = gre;
-                j[7] = 0.0f;
-                j[8] = -gre - gMech;
-            }
-            else
-            {
-                f[0] = iRe - is;
-                f[1] = ip - vkX * gk - icath;
-                f[2] = iRe - iLe - iMech;
-
-                j[0] = gre - n * dIp_dVs;
-                j[1] = -n * dIp_dVk;
-                j[2] = -gre;
-
-                j[3] = dIp_dVs;
-                j[4] = dIp_dVk - gk - cathodeBypass.geq;
-                j[5] = 0.0f;
-
-                j[6] = gre;
-                j[7] = 0.0f;
-                j[8] = -gre - gLe - gMech;
-            }
-        };
-
-        newton.solve (x, fill);
-        if (! std::isfinite (x[0]) || ! std::isfinite (x[1]) || ! std::isfinite (x[2]))
-            return lastGoodVs;
-
-        vs = x[0];
-        vk = x[1];
-        vCoil = x[2];
-        cathodeBypass.advance (vk);
-        if (useLe)
-            leTrap.advance (vCoil);
+    void applyLinearZ (float is) noexcept
+    {
+        float vMech = 0.0f;
         if (useMech)
         {
-            cesTrap.advance (vCoil);
-            lesTrap.advance (vCoil);
+            const float gMech = gres + cesTrap.geq + lesTrap.geq;
+            vMech = (is - lesTrap.iEq + cesTrap.iEq) / std::max (gMech, 1.0e-12f);
+            vCoil = vMech;
+            cesTrap.advance (vMech);
+            lesTrap.advance (vMech);
         }
-        return vs;
+
+        const float vLe = useLe ? lossyLe.process (is) : 0.0f;
+        nfbSense = is * re + vMech;
+        vs = nfbSense + vLe;
     }
 
     float fs = 48000.0f;
@@ -288,15 +250,17 @@ private:
     float re = 8.0f;
     float gre = 0.125f;
     float gres = 0.0f;
-    float vs = 0.0f, vk = 19.0f, vCoil = 0.0f;
-    float lastGoodVs = 0.0f, lastGoodVk = 19.0f, lastGoodVCoil = 0.0f;
+    float vs = 0.0f, vsTube = 0.0f, vk = 19.0f, vCoil = 0.0f, nfbSense = 0.0f;
+    float lastIs = 0.0f;
+    float lastGoodVs = 0.0f, lastGoodVk = 19.0f, lastGoodVCoil = 0.0f, lastGoodNfbSense = 0.0f;
     float vkDc = 19.0f, vakDc = 340.0f, ipDc = 0.04f;
+    static constexpr float kEddyCornerHz = 8000.0f;
     bool useLe = false;
     bool useMech = false;
     ComponentSet components;
     cab::SpeakerRlc speaker = cab::makePreset (cab::ImpedancePreset::flat8);
     circuit::CapacitorTrap cathodeBypass;
-    circuit::InductorTrap leTrap;
+    circuit::ParallelLRDrop lossyLe;
     circuit::CapacitorTrap cesTrap;
     circuit::InductorTrap lesTrap;
     circuit::BeamPowerTube tube;

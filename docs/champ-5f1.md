@@ -10,8 +10,8 @@ Canonical print: [Fender Champ-Amp schematic K-EE / layout K-8E](https://cdn.sho
 | Layer | Status |
 |-------|--------|
 | V1A / Volume / V1B + NFB / 6V6 + OT | Implemented (NFB Stock 22k; Off = lifted resistor) |
-| Default load | Flat **8 Ω** (forced; cab Z(f) deferred until audio is audible) |
-| Cab Z(f) into OT secondary | **Deferred** (engine ignores `loadContext` RLC) |
+| Default load | Flat **8 Ω** when unloaded |
+| Cab Z(f) into OT secondary | **Implemented** — `loadContext` → `cab::resolveLoadRlc` → OT/NFB |
 | Acoustic IR | Stays in Cab IR slot (not baked into amp) |
 | Measured speaker Z tables | **Deferred** (`TODO(measured-z)`) |
 | Nonlinear amp↔cab co-process | **Deferred** until port exchange proves insufficient |
@@ -19,7 +19,7 @@ Canonical print: [Fender Champ-Amp schematic K-EE / layout K-8E](https://cdn.sho
 This is intentionally **not** an Agoura / Fractal-complete cab interaction milestone.
 Synthetic Z(f) presets feed the OT; measured tables and a joint solve wait.
 
-Stripped-down vs the full amp: Hi jack only, no 5Y3 sag, resistive 8 Ω, **base-rate** (no JUCE oversampling — that path muted in-host). NFB is **Stock** (22k) by default; Deep settings **Off** is the classic lifted-resistor mod. Not every future amp will expose this control.
+Stripped-down vs the full amp: Hi jack only, no 5Y3 sag, **base-rate** (no JUCE oversampling — that path muted in-host). Unloaded OT is flat 8 Ω; with a Cab IR in the next slot, the OT and NFB see the selected Z curve (synthetic RLC). NFB is **Stock** (22k) by default; Deep settings **Off** is the classic lifted-resistor mod. Not every future amp will expose this control.
 
 ## Named parts (K-EE)
 
@@ -40,9 +40,10 @@ Input (1M + 68k + Miller LPF)
   → 0.02µ → 6V6 grid (220k leak)
   → 6V6 + OT → speaker Z                      ChampPowerStage
                     └─ 22k NFB ───────────────┘  (Deep: Stock / Off)
+                       Z = Cab IR curve, else flat 8 Ω
 ```
 
-Speaker volts into V1B cathode are **inverted** (V1B and 6V6 each invert; raw OT secondary would be positive feedback). Off disconnects that path (`gnfb = 0`) without resettling the island.
+Speaker volts into V1B cathode are **inverted** (V1B and 6V6 each invert; raw OT secondary would be positive feedback). The NFB tap is **Re + Zmech** (voice-coil Le omitted) so discrete Le + a 1-sample delay cannot motorboat at Nyquist. Off disconnects that path (`gnfb = 0`) without resettling the island. Tube Newton always sees Re (the stable flat-8 path); motional Z is a linear filter on OT current. Speaker volts also get a lossy Le (`sL || Reddy`, eddy pole ~8 kHz) so the coil rise is audible without the 2L/T companion crackle.
 
 Coupling caps are seeded at **equilibrium** after each triode settles (`vC = Vp_idle`) so idle plate DC is not dumped onto the next grid.
 
@@ -55,7 +56,7 @@ Tube islands run at **base sample rate**. 4× `circuit::Oversampler` is deferred
 | [`ChampComponents.h`](../Source/dsp/amps/champ/ChampComponents.h) | Named 5F1 parts + anchors |
 | [`ChampTriodeStage.h`](../Source/dsp/amps/champ/ChampTriodeStage.h) | 12AX7 Newton island + CouplingHp |
 | [`ChampPowerStage.h`](../Source/dsp/amps/champ/ChampPowerStage.h) | 6V6 + AC OT + speaker RLC |
-| [`ChampEngine.h`](../Source/dsp/amps/champ/ChampEngine.h) | Base-rate path, forced flat 8 Ω |
+| [`ChampEngine.h`](../Source/dsp/amps/champ/ChampEngine.h) | Base-rate path; OT load from `resolveLoadRlc` |
 | [`Champ5F1.h`](../Source/dsp/amps/Champ5F1.h) | `Block` façade |
 | [`TubeModel.h`](../Source/dsp/circuit/TubeModel.h) | Koren 12AX7 + beam 6V6 |
 | [`SpeakerRlc.h`](../Source/dsp/cabs/SpeakerRlc.h) | Synthetic Z(f) presets |
@@ -67,7 +68,7 @@ clang++ -std=c++17 -O2 -I Source tools/champ_verify_main.cpp -o tools/champ_veri
 ./tools/champ_verify
 ```
 
-Checks: coupling corners, NFB ratio, OT n, solved 12AX7/6V6 idle, flat-8 / reactive Z Newton smoke, volume taper, an **end-to-end base-rate audio probe** with NFB Off (seeded coupling, all stages finite, non-zero AC RMS into resistive 8 Ω), and **NFB Stock quieter than Off**.
+Checks: coupling corners, NFB ratio, OT n, solved 12AX7/6V6 idle, flat-8 / reactive Z Newton smoke, volume taper, an **end-to-end base-rate audio probe** with NFB Off (seeded coupling, all stages finite, non-zero AC RMS into resistive 8 Ω), **NFB Stock quieter than Off**, and the same NFB check into **Fender Dlx 1x12** and **Mesa 4x12** Z(f).
 
 Debug plugin builds also `DBG` the report once from `Champ5F1::prepare`.
 
@@ -75,7 +76,7 @@ Debug plugin builds also `DBG` the report once from `Champ5F1::prepare`.
 
 - **Zin** ≈ 1 MΩ (`getInputLoad`)
 - **Zout** ≈ speaker nominal ohms (`getOutputPort`)
-- **`loadContext`** → `cab::resolveLoadRlc` → OT secondary (not acoustic IR)
+- **`loadContext`** → `cab::resolveLoadRlc` → OT secondary (not acoustic IR). Unloaded / high-Z → flat 8 Ω. Cab IR `SpeakerImpedance` → selected Z curve. RLC is cached so trap rebuilds happen only on change.
 
 ## Deep settings
 
