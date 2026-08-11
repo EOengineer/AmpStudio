@@ -6,7 +6,7 @@
 #include "champ/ChampVerifyBootstrap.h"
 
 /**
- * White-box Fender Champ 5F1 — Volume only.
+ * White-box Fender Champ 5F1 — Volume primary; NFB Stock/Off in Deep settings.
  *
  * Electrical contexts (set by Chain before process):
  * - driveContext: reserved for future input-network source Z.
@@ -20,6 +20,7 @@ public:
     {
         state.setProperty ("typeId", ModuleIds::champ5F1, nullptr);
         setParam (ParamIDs::Champ5F1::volume, 0.5f);
+        setParam (ParamIDs::Champ5F1::nfb, 1.0f); // Stock 22k
     }
 
     juce::String getTypeId() const override { return ModuleIds::champ5F1; }
@@ -51,6 +52,7 @@ public:
             return;
 
         engine.setVolume (getParam (ParamIDs::Champ5F1::volume, 0.5f));
+        engine.setNfbEnabled (getParam (ParamIDs::Champ5F1::nfb, 1.0f) >= 0.5f);
         engine.setLoadContext (loadContext);
         juce::ignoreUnused (driveContext);
         engine.process (buffer);

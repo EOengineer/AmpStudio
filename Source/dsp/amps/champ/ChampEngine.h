@@ -15,8 +15,8 @@ namespace champ
  * juce::dsp::Oversampling has muted this amp in-host while the identical
  * stages pass offline; 4× OS is deferred until this path is audible.
  *
- * Stripped vs full 5F1: Hi jack, no 5Y3, resistive 8 Ω, NFB open
- * (re-enable once audio is confirmed).
+ * Stripped vs full 5F1: Hi jack, no 5Y3, resistive 8 Ω. NFB is Stock 22k
+ * by default (Off = lifted resistor).
  */
 class ChampEngine
 {
@@ -48,6 +48,13 @@ public:
     void setVolume (float volume01) noexcept
     {
         volume = std::clamp (volume01, 0.0f, 1.0f);
+    }
+
+    /** Stock = 22k speaker → V1B cathode; Off = resistor lifted. */
+    void setNfbEnabled (bool on) noexcept
+    {
+        nfbEnabled = on;
+        v1b.setNfbOhms (on ? components.nfbR : 0.0f);
     }
 
     void setComponentSet (const ComponentSet& c)
@@ -98,7 +105,10 @@ public:
             float ac1 = couple1.processFromPlate (p1);
             ac1 *= vol;
 
-            const float p2 = v1b.processSample (ac1, 0.0f); // NFB open
+            // V1B and 6V6 each invert; raw lastSpeakerV into the cathode is
+            // positive feedback. Invert so Stock reduces gain.
+            const float nfbV = nfbEnabled ? -lastSpeakerV : 0.0f;
+            const float p2 = v1b.processSample (ac1, nfbV);
             const float ac2 = couple2.processFromPlate (p2);
 
             lastSpeakerV = power.processSample (ac2);
@@ -135,10 +145,10 @@ private:
         v1a.prepare (fs, components.v1aPlateR, components.v1aCathodeR,
                      components.v1aBypassC, components.bplusPreamp, 0.0f);
         couple1.prepare (components.couplingC1, components.volumePotR, fs);
-        // NFB resistor omitted until the open-loop path is audible in-host.
         v1b.prepare (fs, components.v1bPlateR, components.v1bCathodeR,
                      1.0e-12f,
-                     components.bplusPreamp, 0.0f);
+                     components.bplusPreamp,
+                     nfbEnabled ? components.nfbR : 0.0f);
         couple2.prepare (components.couplingC2, components.powerGridLeakR, fs);
         power.prepare (fs, components);
         power.setSpeakerRlc (cab::makePreset (cab::ImpedancePreset::flat8));
@@ -149,6 +159,7 @@ private:
     juce::dsp::ProcessSpec baseSpec {};
     ComponentSet components;
     float volume = 0.5f;
+    bool nfbEnabled = true;
     float lastSpeakerV = 0.0f;
     int dbgBlocks = 0;
     GridInputFilter inputFilter;

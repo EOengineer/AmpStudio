@@ -88,7 +88,8 @@ struct EndToEndProbe
     }
 };
 
-inline EndToEndProbe runEndToEndPath (float fs = 48000.0f) noexcept
+/** nfbOn = Stock 22k with inverted speaker volts (negative feedback). */
+inline EndToEndProbe runEndToEndPath (float fs = 48000.0f, bool nfbOn = false) noexcept
 {
     EndToEndProbe p;
     ComponentSet stock;
@@ -105,7 +106,7 @@ inline EndToEndProbe runEndToEndPath (float fs = 48000.0f) noexcept
     couple1.seedFromPlate (v1a.getPlate());
 
     v1b.prepare (fs, stock.v1bPlateR, stock.v1bCathodeR,
-                 1.0e-12f, stock.bplusPreamp, stock.nfbR);
+                 1.0e-12f, stock.bplusPreamp, nfbOn ? stock.nfbR : 0.0f);
     couple2.prepare (stock.couplingC2, stock.powerGridLeakR, fs);
     couple2.seedFromPlate (v1b.getPlate());
 
@@ -132,7 +133,8 @@ inline EndToEndProbe runEndToEndPath (float fs = 48000.0f) noexcept
     {
         const float plate1 = v1a.processSample (vin, 0.0f);
         const float ac1 = couple1.processFromPlate (plate1) * vol;
-        const float plate2 = v1b.processSample (ac1, lastVs);
+        const float nfbV = nfbOn ? -lastVs : 0.0f;
+        const float plate2 = v1b.processSample (ac1, nfbV);
         const float ac2 = couple2.processFromPlate (plate2);
         lastVs = power.processSample (ac2);
         const float digital = speakerVoltsToDigital (lastVs);
@@ -291,18 +293,33 @@ inline VerifyReport runChampVerification()
         report.add ({ "V1A Newton stable", finite && okBias && std::isfinite (y), d.str() });
     }
 
-    // End-to-end base-rate path: coupling seeded, all finite, audible RMS
+    // End-to-end base-rate path (NFB Off): coupling seeded, all finite, audible RMS
+    EndToEndProbe nfbOffProbe;
     {
-        const auto probe = runEndToEndPath (48000.0f);
-        const bool firstQuiet = std::abs (probe.firstAc1) < 1.0f
-                             && std::abs (probe.firstAc2) < 1.0f;
-        const bool hasAc = probe.rmsAc1 > 0.05f && probe.rmsAc2 > 0.05f;
-        const bool audible = probe.rmsVs > 0.05f && probe.rmsDigital > 0.002f
-                          && probe.peakVs < 80.0f;
-        const bool ok = probe.finiteFirst && probe.finiteAll && firstQuiet
+        nfbOffProbe = runEndToEndPath (48000.0f, false);
+        const bool firstQuiet = std::abs (nfbOffProbe.firstAc1) < 1.0f
+                             && std::abs (nfbOffProbe.firstAc2) < 1.0f;
+        const bool hasAc = nfbOffProbe.rmsAc1 > 0.05f && nfbOffProbe.rmsAc2 > 0.05f;
+        const bool audible = nfbOffProbe.rmsVs > 0.05f && nfbOffProbe.rmsDigital > 0.002f
+                          && nfbOffProbe.peakVs < 80.0f;
+        const bool ok = nfbOffProbe.finiteFirst && nfbOffProbe.finiteAll && firstQuiet
                      && hasAc && audible;
-        report.add ({ "End-to-end base-rate audio (resistive 8 ohm)", ok,
-                      probe.toDetail() });
+        report.add ({ "End-to-end base-rate audio (resistive 8 ohm, NFB Off)", ok,
+                      nfbOffProbe.toDetail() });
+    }
+
+    // Stock 22k NFB must stay finite and reduce speaker RMS vs Off
+    {
+        const auto nfbOnProbe = runEndToEndPath (48000.0f, true);
+        const bool quieter = nfbOnProbe.rmsVs < nfbOffProbe.rmsVs * 0.9f;
+        const bool stillAudible = nfbOnProbe.rmsVs > 0.01f && nfbOnProbe.rmsDigital > 0.0005f;
+        const bool ok = nfbOnProbe.finiteFirst && nfbOnProbe.finiteAll
+                     && quieter && stillAudible && nfbOnProbe.peakVs < 80.0f;
+        std::ostringstream d;
+        d << "Stock rmsVs=" << nfbOnProbe.rmsVs
+          << " Off rmsVs=" << nfbOffProbe.rmsVs
+          << " " << nfbOnProbe.toDetail();
+        report.add ({ "NFB Stock quieter than Off", ok, d.str() });
     }
 
     // Power stage into flat 8 Ω — finite speaker volts

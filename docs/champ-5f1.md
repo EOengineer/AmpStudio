@@ -1,6 +1,6 @@
 # Champ 5F1 — physics-first model
 
-White-box Fender Champ 5F1 (Volume only). Same discipline as the Tube Screamer:
+White-box Fender Champ 5F1 (Volume on the primary strip; NFB Stock/Off in Deep settings). Same discipline as the Tube Screamer:
 **named parts → discrete network → small Newton islands → ports for drive/load.**
 
 Canonical print: [Fender Champ-Amp schematic K-EE / layout K-8E](https://cdn.shopify.com/s/files/1/0604/9615/0624/files/fender_champ_5f1.pdf?v=1758721069) (Hi jack path). Some K-EE drawings omit the V1A 25 µF cathode bypass; that is widely treated as a drafting error, and vintage amps usually have it — we keep the 25 µF.
@@ -9,7 +9,7 @@ Canonical print: [Fender Champ-Amp schematic K-EE / layout K-8E](https://cdn.sho
 
 | Layer | Status |
 |-------|--------|
-| V1A / Volume / V1B + NFB / 6V6 + OT | Implemented |
+| V1A / Volume / V1B + NFB / 6V6 + OT | Implemented (NFB Stock 22k; Off = lifted resistor) |
 | Default load | Flat **8 Ω** (forced; cab Z(f) deferred until audio is audible) |
 | Cab Z(f) into OT secondary | **Deferred** (engine ignores `loadContext` RLC) |
 | Acoustic IR | Stays in Cab IR slot (not baked into amp) |
@@ -19,7 +19,7 @@ Canonical print: [Fender Champ-Amp schematic K-EE / layout K-8E](https://cdn.sho
 This is intentionally **not** an Agoura / Fractal-complete cab interaction milestone.
 Synthetic Z(f) presets feed the OT; measured tables and a joint solve wait.
 
-Stripped-down vs the full amp: Hi jack only, no 5Y3 sag, resistive 8 Ω, **NFB open**, **base-rate** (no JUCE oversampling — that path muted in-host).
+Stripped-down vs the full amp: Hi jack only, no 5Y3 sag, resistive 8 Ω, **base-rate** (no JUCE oversampling — that path muted in-host). NFB is **Stock** (22k) by default; Deep settings **Off** is the classic lifted-resistor mod. Not every future amp will expose this control.
 
 ## Named parts (K-EE)
 
@@ -36,10 +36,13 @@ Stripped-down vs the full amp: Hi jack only, no 5Y3 sag, resistive 8 Ω, **NFB o
 Input (1M + 68k + Miller LPF)
   → V1A 12AX7 (100k / 1.5k + 25µ bypass)     ChampTriodeStage
   → 0.02µ → Volume 1M                         CouplingHp + taper
-  → V1B 12AX7 (100k / 1.5k, NFB open for now) ChampTriodeStage
+  → V1B 12AX7 (100k / 1.5k, NFB from speaker) ChampTriodeStage
   → 0.02µ → 6V6 grid (220k leak)
   → 6V6 + OT → speaker Z                      ChampPowerStage
+                    └─ 22k NFB ───────────────┘  (Deep: Stock / Off)
 ```
+
+Speaker volts into V1B cathode are **inverted** (V1B and 6V6 each invert; raw OT secondary would be positive feedback). Off disconnects that path (`gnfb = 0`) without resettling the island.
 
 Coupling caps are seeded at **equilibrium** after each triode settles (`vC = Vp_idle`) so idle plate DC is not dumped onto the next grid.
 
@@ -64,7 +67,7 @@ clang++ -std=c++17 -O2 -I Source tools/champ_verify_main.cpp -o tools/champ_veri
 ./tools/champ_verify
 ```
 
-Checks: coupling corners, NFB ratio, OT n, solved 12AX7/6V6 idle, flat-8 / reactive Z Newton smoke, volume taper, and an **end-to-end base-rate audio probe** (seeded coupling, all stages finite on sample 0 and after ~50 ms, non-zero AC RMS into resistive 8 Ω).
+Checks: coupling corners, NFB ratio, OT n, solved 12AX7/6V6 idle, flat-8 / reactive Z Newton smoke, volume taper, an **end-to-end base-rate audio probe** with NFB Off (seeded coupling, all stages finite, non-zero AC RMS into resistive 8 Ω), and **NFB Stock quieter than Off**.
 
 Debug plugin builds also `DBG` the report once from `Champ5F1::prepare`.
 
@@ -73,3 +76,7 @@ Debug plugin builds also `DBG` the report once from `Champ5F1::prepare`.
 - **Zin** ≈ 1 MΩ (`getInputLoad`)
 - **Zout** ≈ speaker nominal ohms (`getOutputPort`)
 - **`loadContext`** → `cab::resolveLoadRlc` → OT secondary (not acoustic IR)
+
+## Deep settings
+
+Per-module, opt-in. Champ registers NFB (`Off` / `Stock` pill) as a deep spec; TS and Cab have none, so the Deep button is hidden. Sag is a later Deep control, not this milestone.
