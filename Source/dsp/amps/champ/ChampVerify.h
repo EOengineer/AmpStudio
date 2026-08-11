@@ -54,7 +54,7 @@ inline bool near (float a, float b, float relTol, float absTol = 1.0f) noexcept
     return std::abs (a - b) <= absTol + relTol * std::max (std::abs (a), std::abs (b));
 }
 
-/** Base-rate (no JUCE OS) full path: V1A → C1 → V1B → C2 → 6V6 into flat 8 Ω. */
+/** Base-rate (no JUCE OS) full path: V1A → C1 → V1B → C2 → 6V6 into speaker Z. */
 struct EndToEndProbe
 {
     bool finiteFirst = true;
@@ -72,6 +72,7 @@ struct EndToEndProbe
     float rmsAc2 = 0.0f;
     float rmsVs = 0.0f;
     float rmsDigital = 0.0f;
+    float maxDeltaVs = 0.0f;
 
     std::string toDetail() const
     {
@@ -82,6 +83,7 @@ struct EndToEndProbe
           << " peak ac1=" << peakAc1 << " ac2=" << peakAc2 << " Vs=" << peakVs
           << " rms ac1=" << rmsAc1 << " ac2=" << rmsAc2
           << " Vs=" << rmsVs << " digital=" << rmsDigital
+          << " dVs=" << maxDeltaVs
           << " finite0=" << (finiteFirst ? "yes" : "NO")
           << " finiteAll=" << (finiteAll ? "yes" : "NO");
         return d.str();
@@ -89,7 +91,12 @@ struct EndToEndProbe
 };
 
 /** nfbOn = Stock 22k with inverted speaker volts (negative feedback). */
-inline EndToEndProbe runEndToEndPath (float fs = 48000.0f, bool nfbOn = false) noexcept
+inline EndToEndProbe runEndToEndPath (
+    float fs = 48000.0f,
+    bool nfbOn = false,
+    cab::SpeakerRlc load = cab::makePreset (cab::ImpedancePreset::flat8),
+    float gridAmp = 0.05f,
+    int toneSamples = 2400) noexcept
 {
     EndToEndProbe p;
     ComponentSet stock;
@@ -111,7 +118,7 @@ inline EndToEndProbe runEndToEndPath (float fs = 48000.0f, bool nfbOn = false) n
     couple2.seedFromPlate (v1b.getPlate());
 
     power.prepare (fs, stock);
-    power.setSpeakerRlc (cab::makePreset (cab::ImpedancePreset::flat8));
+    power.setSpeakerRlc (load);
 
     p.idlePlate1 = v1a.getPlate();
     p.idlePlate2 = v1b.getPlate();
@@ -124,19 +131,20 @@ inline EndToEndProbe runEndToEndPath (float fs = 48000.0f, bool nfbOn = false) n
     int rmsN = 0;
 
     constexpr int kZeroSamples = 64;
-    constexpr int kToneSamples = 2400; // 50 ms @ 48 kHz
     constexpr float kPi = 3.14159265358979323846f;
     constexpr float kHz = 1000.0f;
-    constexpr float kAmp = 0.05f; // 50 mV grid, guitar-ish
+    float prevVs = 0.0f;
 
     auto tick = [&] (float vin, bool accumulateRms, bool isFirst)
     {
         const float plate1 = v1a.processSample (vin, 0.0f);
         const float ac1 = couple1.processFromPlate (plate1) * vol;
-        const float nfbV = nfbOn ? -lastVs : 0.0f;
+        const float nfbV = nfbOn ? -power.getNfbSenseVolts() : 0.0f;
         const float plate2 = v1b.processSample (ac1, nfbV);
         const float ac2 = couple2.processFromPlate (plate2);
         lastVs = power.processSample (ac2);
+        p.maxDeltaVs = std::max (p.maxDeltaVs, std::abs (lastVs - prevVs));
+        prevVs = lastVs;
         const float digital = speakerVoltsToDigital (lastVs);
 
         const bool ok = std::isfinite (plate1) && std::isfinite (ac1)
@@ -170,9 +178,9 @@ inline EndToEndProbe runEndToEndPath (float fs = 48000.0f, bool nfbOn = false) n
     for (int i = 1; i < kZeroSamples; ++i)
         tick (0.0f, false, false);
 
-    for (int i = 0; i < kToneSamples; ++i)
+    for (int i = 0; i < toneSamples; ++i)
     {
-        const float vin = kAmp * std::sin (2.0f * kPi * kHz * (float) i / fs);
+        const float vin = gridAmp * std::sin (2.0f * kPi * kHz * (float) i / fs);
         tick (vin, true, false);
     }
 
@@ -320,6 +328,44 @@ inline VerifyReport runChampVerification()
           << " Off rmsVs=" << nfbOffProbe.rmsVs
           << " " << nfbOnProbe.toDetail();
         report.add ({ "NFB Stock quieter than Off", ok, d.str() });
+    }
+
+    // Full path into Fender Dlx 1x12 Z(f), NFB Stock: finite, audible
+    const auto fenderZ = cab::makePreset (cab::ImpedancePreset::fenderDlx1x12);
+    EndToEndProbe nfbOffFender;
+    {
+        nfbOffFender = runEndToEndPath (48000.0f, false, fenderZ);
+        const auto nfbOnFender = runEndToEndPath (48000.0f, true, fenderZ);
+        const bool audible = nfbOnFender.finiteFirst && nfbOnFender.finiteAll
+                          && nfbOnFender.rmsVs > 0.01f && nfbOnFender.rmsDigital > 0.0005f
+                          && nfbOnFender.peakVs < 80.0f;
+        const bool quieter = nfbOnFender.rmsVs < nfbOffFender.rmsVs * 0.9f;
+        const bool ok = audible && nfbOffFender.finiteAll && quieter;
+        std::ostringstream d;
+        d << "Stock rmsVs=" << nfbOnFender.rmsVs
+          << " Off rmsVs=" << nfbOffFender.rmsVs
+          << " " << nfbOnFender.toDetail();
+        report.add ({ "End-to-end NFB Stock into Fender 1x12 Z(f)", ok, d.str() });
+    }
+
+    // Mesa 4x12 (Cab default) + NFB, longer — must not chatter/gate
+    {
+        const auto mesaZ = cab::makePreset (cab::ImpedancePreset::mesa4x12V30);
+        constexpr float kAmp = 0.05f;
+        constexpr int kLong = 9600; // 200 ms @ 48 kHz
+        const auto nfbOffMesa = runEndToEndPath (48000.0f, false, mesaZ, kAmp, kLong);
+        const auto nfbOnMesa = runEndToEndPath (48000.0f, true, mesaZ, kAmp, kLong);
+        const bool audible = nfbOnMesa.finiteFirst && nfbOnMesa.finiteAll
+                          && nfbOnMesa.rmsVs > 0.01f && nfbOnMesa.rmsDigital > 0.0005f
+                          && nfbOnMesa.peakVs < 80.0f;
+        const bool quieter = nfbOnMesa.rmsVs < nfbOffMesa.rmsVs;
+        const bool noChatter = nfbOnMesa.maxDeltaVs < 20.0f && nfbOffMesa.maxDeltaVs < 20.0f;
+        const bool ok = audible && nfbOffMesa.finiteAll && quieter && noChatter;
+        std::ostringstream d;
+        d << "Stock rmsVs=" << nfbOnMesa.rmsVs
+          << " Off rmsVs=" << nfbOffMesa.rmsVs
+          << " " << nfbOnMesa.toDetail();
+        report.add ({ "End-to-end NFB Stock into Mesa 4x12 Z(f)", ok, d.str() });
     }
 
     // Power stage into flat 8 Ω — finite speaker volts

@@ -39,6 +39,12 @@ struct SpeakerRlc
     bool syntheticPlaceholder = true; // TODO(measured-z): clear when measured data loaded
 };
 
+inline bool sameRlc (const SpeakerRlc& a, const SpeakerRlc& b) noexcept
+{
+    return a.re == b.re && a.le == b.le && a.res == b.res
+        && a.ces == b.ces && a.les == b.les;
+}
+
 inline SpeakerRlc makePreset (ImpedancePreset preset) noexcept
 {
     SpeakerRlc z;

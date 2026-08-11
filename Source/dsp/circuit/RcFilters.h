@@ -172,6 +172,52 @@ private:
     float x1 = 0.0f, y1 = 0.0f;
 };
 
+/**
+ * Voltage across (sL || R) given current: Z = s L R / (s L + R).
+ * Same as series Le at low freq; HF saturates at R (eddy-current / Wright).
+ */
+struct ParallelLRDrop
+{
+    void prepare (float inductanceH, float rOhms, float fs) noexcept
+    {
+        gain = std::max (rOhms, 1.0f);
+        const float tau = std::max (inductanceH, 1.0e-12f) / gain;
+        const float T = 1.0f / std::max (fs, 1.0f);
+        const float a = 2.0f * tau / T;
+        const float inv = 1.0f / (1.0f + a);
+        b0 = a * inv;
+        b1 = -a * inv;
+        a1 = (1.0f - a) * inv;
+        reset();
+    }
+
+    void reset() noexcept
+    {
+        x1 = 0.0f;
+        y1 = 0.0f;
+    }
+
+    /** First sample drop 0 at the current is (curve change / prime). */
+    void prime (float is) noexcept
+    {
+        x1 = is;
+        y1 = 0.0f;
+    }
+
+    float process (float is) noexcept
+    {
+        const float y = b0 * is + b1 * x1 - a1 * y1;
+        x1 = is;
+        y1 = y;
+        return gain * y;
+    }
+
+private:
+    float gain = 1.0f;
+    float b0 = 0.0f, b1 = 0.0f, a1 = 0.0f;
+    float x1 = 0.0f, y1 = 0.0f;
+};
+
 /** Trapezoidal companion for an inductor (series or shunt). Geq = T/(2L). */
 struct InductorTrap
 {

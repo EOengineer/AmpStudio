@@ -15,8 +15,9 @@ namespace champ
  * juce::dsp::Oversampling has muted this amp in-host while the identical
  * stages pass offline; 4× OS is deferred until this path is audible.
  *
- * Stripped vs full 5F1: Hi jack, no 5Y3, resistive 8 Ω. NFB is Stock 22k
- * by default (Off = lifted resistor).
+ * Stripped vs full 5F1: Hi jack, no 5Y3. Unloaded OT is flat 8 Ω; a Cab IR
+ * Z-curve is stamped via loadContext. NFB is Stock 22k by default
+ * (Off = lifted resistor).
  */
 class ChampEngine
 {
@@ -43,6 +44,7 @@ public:
         couple2.seedFromPlate (v1b.getPlate());
         power.reset();
         lastSpeakerV = 0.0f;
+        lastDigitalOut = 0.0f;
     }
 
     void setVolume (float volume01) noexcept
@@ -67,10 +69,10 @@ public:
     ComponentSet& getComponentSet() noexcept { return components; }
     const ComponentSet& getComponentSet() const noexcept { return components; }
 
-    /** Resistive 8 Ω only until in-host audio is proven. */
-    void setLoadContext (const ElectricalPort&) noexcept
+    /** Cab Z(f) when present; unloaded / high-Z falls back to flat 8 Ω. */
+    void setLoadContext (const ElectricalPort& load) noexcept
     {
-        power.setSpeakerRlc (cab::makePreset (cab::ImpedancePreset::flat8));
+        applyLoadRlc (cab::resolveLoadRlc (load));
     }
 
     float getInputZohms() const noexcept { return components.gridLeakR; }
@@ -105,17 +107,19 @@ public:
             float ac1 = couple1.processFromPlate (p1);
             ac1 *= vol;
 
-            // V1B and 6V6 each invert; raw lastSpeakerV into the cathode is
-            // positive feedback. Invert so Stock reduces gain.
-            const float nfbV = nfbEnabled ? -lastSpeakerV : 0.0f;
+            // V1B and 6V6 each invert; raw speaker volts into the cathode is
+            // positive feedback. Invert so Stock reduces gain. Sense is Re+Zmech
+            // (no Le) so voice-coil rise does not motorboat the 1-sample NFB loop.
+            const float nfbV = nfbEnabled ? -power.getNfbSenseVolts() : 0.0f;
             const float p2 = v1b.processSample (ac1, nfbV);
             const float ac2 = couple2.processFromPlate (p2);
 
             lastSpeakerV = power.processSample (ac2);
             float out = speakerVoltsToDigital (lastSpeakerV);
             if (! std::isfinite (out))
-                out = 0.0f;
+                out = lastDigitalOut;
             out = std::clamp (out, -2.0f, 2.0f);
+            lastDigitalOut = out;
             left[i] = out;
             outPeak = std::max (outPeak, std::abs (out));
         }
@@ -151,16 +155,27 @@ private:
                      nfbEnabled ? components.nfbR : 0.0f);
         couple2.prepare (components.couplingC2, components.powerGridLeakR, fs);
         power.prepare (fs, components);
-        power.setSpeakerRlc (cab::makePreset (cab::ImpedancePreset::flat8));
+        // prepare() stamps flat 8; restore cached cab Z (or flat 8 default).
+        power.setSpeakerRlc (cachedLoadRlc);
         couple1.seedFromPlate (v1a.getPlate());
         couple2.seedFromPlate (v1b.getPlate());
     }
 
+    void applyLoadRlc (const cab::SpeakerRlc& rlc) noexcept
+    {
+        if (cab::sameRlc (rlc, cachedLoadRlc))
+            return;
+        cachedLoadRlc = rlc;
+        power.setSpeakerRlc (rlc);
+    }
+
     juce::dsp::ProcessSpec baseSpec {};
     ComponentSet components;
+    cab::SpeakerRlc cachedLoadRlc = cab::makePreset (cab::ImpedancePreset::flat8);
     float volume = 0.5f;
     bool nfbEnabled = true;
     float lastSpeakerV = 0.0f;
+    float lastDigitalOut = 0.0f;
     int dbgBlocks = 0;
     GridInputFilter inputFilter;
     ChampTriodeStage v1a;
