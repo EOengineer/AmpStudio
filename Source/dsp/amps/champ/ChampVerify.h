@@ -9,6 +9,7 @@
 #include "../../circuit/TubeModel.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -73,6 +74,16 @@ namespace Golden
     inline constexpr float kNfbOffRmsDigitalFlat8 = 0.89f;
     inline constexpr float kRmsLo = 0.5f;
     inline constexpr float kRmsHi = 2.0f;
+
+    // Hot guitar-ish drive (vol 1, NFB Stock). Golden ~ hf 0.12, hp 0.10, holds 0.
+    // Tripwire for lastGood stutter / huge HF. The reverted NFB-LPF and soft
+    // 6V6-cutoff slices did not move these numbers offline — host listen remains
+    // the gate for that class of hash.
+    inline constexpr float kHashHfMax = 0.25f;
+    inline constexpr float kHashHpMax = 0.22f;
+    inline constexpr float kHashHighBandMax = 0.02f;
+    inline constexpr float kHashHoldMax = 0.005f;
+    inline constexpr float kHashDerivFlipMax = 0.18f;
 }
 
 inline bool inGoldenRms (float rms, float golden) noexcept
@@ -177,6 +188,139 @@ struct HfAccum
         return totE > 1.0e-20 ? (float) (diffE / totE) : 0.0f;
     }
 };
+
+inline float goertzelPower (const float* x, int n, float fs, float freqHz) noexcept
+{
+    const float w = 2.0f * 3.14159265358979323846f * freqHz / fs;
+    const float coeff = 2.0f * std::cos (w);
+    float s0 = 0.0f, s1 = 0.0f, s2 = 0.0f;
+    for (int i = 0; i < n; ++i)
+    {
+        s0 = x[i] + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    const float real = s1 - s2 * std::cos (w);
+    const float imag = s2 * std::sin (w);
+    return real * real + imag * imag;
+}
+
+/**
+ * Driven hash / static (the two reverted slices were quiet at idle and hashed
+ * on guitar). Plugin defaults: vol 0.5, NFB Stock, 220 Hz, 0.25 digital.
+ */
+struct HashProbe
+{
+    float rmsDigital = 0.0f;
+    float hfRatio = 0.0f;
+    float signFlipRate = 0.0f;
+    float derivFlipRate = 0.0f;
+    float highBandRatio = 0.0f; // (8+12+16+20 kHz) / (fund + those)
+    float hpRatio = 0.0f;       // energy above ~1.5 kHz / total (catches 2–4 kHz chatter)
+    float holdRate = 0.0f;      // ChampPowerStage lastGood / Newton rejects
+    int holdCount = 0;
+    bool finiteAll = true;
+
+    std::string toDetail() const
+    {
+        std::ostringstream d;
+        d << "rms=" << rmsDigital
+          << " hf=" << hfRatio
+          << " flip=" << signFlipRate
+          << " dFlip=" << derivFlipRate
+          << " highBand=" << highBandRatio
+          << " hp=" << hpRatio
+          << " holds=" << holdCount
+          << " holdRate=" << holdRate
+          << " finite=" << (finiteAll ? "yes" : "NO");
+        return d.str();
+    }
+};
+
+inline HashProbe runDrivenHash (
+    float fs = 48000.0f,
+    bool nfbOn = true,
+    float volume01 = 1.0f,
+    float digitalAmp = 0.4f,
+    float toneHz = 220.0f,
+    int toneSamples = 4096) noexcept
+{
+    HashProbe p;
+    ChampDsp dsp;
+    dsp.prepare (fs);
+    dsp.setVolume (volume01);
+    dsp.setNfbEnabled (nfbOn);
+    dsp.setSpeakerRlc (cab::makePreset (cab::ImpedancePreset::flat8));
+    dsp.reset();
+
+    constexpr float kPi = 3.14159265358979323846f;
+    for (int i = 0; i < 256; ++i)
+        dsp.processSample (0.0f);
+
+    std::vector<float> y ((size_t) toneSamples, 0.0f);
+    HfAccum tone;
+    float prevD = 0.0f;
+    bool haveD = false;
+    int derivFlips = 0;
+    int derivSteps = 0;
+    circuit::OnePoleLpRc hpRef;
+    hpRef.prepare (10.0e3f, 1.0f / (2.0f * kPi * 1500.0f * 10.0e3f), fs);
+    double hpE = 0.0, totE = 0.0;
+
+    for (int i = 0; i < toneSamples; ++i)
+    {
+        // Guitar-ish: 220 Hz + odds + 3 kHz pick + deterministic noise.
+        // Steady sines at plugin-default volume never reached 6V6 cutoff and
+        // did not show the NFB-LPF chatter heard on a real guitar.
+        const float ph = 2.0f * kPi * toneHz * (float) i / fs;
+        uint32_t rng = 0xA3C5u + (uint32_t) i * 747796405u;
+        rng = rng * 1664525u + 1013904223u;
+        const float noise = (float) (int32_t) rng * (1.0f / 2147483648.0f);
+        const float vin = digitalAmp * (0.70f * std::sin (ph)
+                                      + 0.20f * std::sin (3.0f * ph)
+                                      + 0.10f * std::sin (5.0f * ph)
+                                      + 0.15f * std::sin (2.0f * kPi * 3000.0f * (float) i / fs)
+                                      + 0.20f * noise);
+        const float out = dsp.processSample (vin);
+        if (! std::isfinite (out))
+            p.finiteAll = false;
+        y[(size_t) i] = out;
+        tone.add (out);
+        const float lp = hpRef.process (out);
+        const float hp = out - lp;
+        hpE += (double) hp * (double) hp;
+        totE += (double) out * (double) out;
+
+        if (i > 0)
+        {
+            const float d = out - y[(size_t) i - 1];
+            if (haveD)
+            {
+                if ((prevD > 0.0f && d < 0.0f) || (prevD < 0.0f && d > 0.0f))
+                    ++derivFlips;
+                ++derivSteps;
+            }
+            prevD = d;
+            haveD = true;
+        }
+    }
+
+    p.rmsDigital = tone.rms();
+    p.hfRatio = tone.hfRatio();
+    p.signFlipRate = tone.signFlipRate();
+    p.derivFlipRate = derivSteps > 0 ? (float) derivFlips / (float) derivSteps : 0.0f;
+
+    const float fund = goertzelPower (y.data(), toneSamples, fs, toneHz);
+    const float hi = goertzelPower (y.data(), toneSamples, fs, 8000.0f)
+                   + goertzelPower (y.data(), toneSamples, fs, 12000.0f)
+                   + goertzelPower (y.data(), toneSamples, fs, 16000.0f)
+                   + goertzelPower (y.data(), toneSamples, fs, 20000.0f);
+    p.highBandRatio = hi / std::max (fund + hi, 1.0e-20f);
+    p.hpRatio = totE > 1.0e-20 ? (float) (hpE / totE) : 0.0f;
+    p.holdCount = dsp.getPower().getHoldCount();
+    p.holdRate = dsp.getPower().getHoldRate();
+    return p;
+}
 
 /** nfbOn = Stock 22k with inverted speaker volts (negative feedback). */
 inline EndToEndProbe runHostPath (
@@ -617,6 +761,20 @@ inline VerifyReport runChampVerification()
         std::ostringstream d;
         d << "peak |Vs|=" << peak << " V into Fender 1x12 Z(f)";
         report.add ({ "Power+OT into reactive Z(f)", ok, d.str() });
+    }
+
+    // Driven hash. Quiet idle is not enough — the reverted LPF / soft-cutoff
+    // slices hashed on guitar. Hot + noisy drive is what actually hits cutoff.
+    {
+        const auto h = runDrivenHash();
+        const bool audible = h.finiteAll && h.rmsDigital > 0.01f;
+        const bool notHashed = h.holdRate <= Golden::kHashHoldMax
+                            && h.hfRatio <= Golden::kHashHfMax
+                            && h.hpRatio <= Golden::kHashHpMax
+                            && h.highBandRatio <= Golden::kHashHighBandMax
+                            && h.derivFlipRate <= Golden::kHashDerivFlipMax;
+        report.add ({ "Host-path driven hash (vol 1, NFB Stock, hot 220 Hz)",
+                      audible && notHashed, h.toDetail() });
     }
 
     // Volume taper monotonic

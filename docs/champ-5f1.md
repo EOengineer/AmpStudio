@@ -70,8 +70,8 @@ golden cab-Z HEAD → ChampDsp + probes → host listen
 
 Only after the host-path probes stay green and the plugin still sounds like HEAD.
 
-1. NFB anti-alias LPF (~2–3 kHz on the sense tap) — stability margin before any gm increase
-2. Soften 6V6 cutoff in `BeamPowerTube` (`drive <= 0 → Ip = 0` is a hard gate)
+1. NFB anti-alias LPF (~2–3 kHz on the sense tap) — **tried, reverted.** Signal-following stuttering static with Champ alone (quiet at idle). Extra lag on the 1-sample NFB loop; do not retry the same pole.
+2. Soften 6V6 cutoff in `BeamPowerTube` — **tried, reverted.** Softplus on Child-law drive hashed guitar audio (idle numbers unchanged). Do not retry the same knee.
 3. Soften grid windows (tanh) — clamps stay, edges less crunchy
 4. Grid current **with clamps still on** — Ig must not 1-sample-snap
 5. gm-matched 6V6 plate — scale to Child-law gm at idle before a full Koren swap; Nyquist idle check is stop-ship
@@ -110,6 +110,7 @@ Offline checks drive **`ChampDsp`** (not a parallel stage graph). That includes:
 - **NFB Stock quieter than Off** (small-signal; high drive saturates the 6V6 window)
 - Same NFB + stability checks into **Fender Dlx 1x12** and **Mesa 4x12** Z(f)
 - **Golden RMS bands** (~0.5×–2× of the cab-Z HEAD capture) so later physics cannot collapse to silence
+- **Driven hash tripwire** (hot 220 Hz + noise, vol 1, NFB Stock): Newton `lastGood` hold rate, HF / >1.5 kHz energy, derivative flip rate. Catches stutter-holds and huge ultrasonic junk. It does **not** replace a listen — the reverted NFB LPF and soft 6V6 cutoff hashed in-host while these numbers stayed at golden.
 
 A passing report does **not** replace a host listen (Champ alone, Champ + Cab IR, NFB Stock/Off, volume mid/up). Debug plugin builds also `DBG` the report once from `Champ5F1::prepare` — a failed check must not `jassert` / mute the amp.
 

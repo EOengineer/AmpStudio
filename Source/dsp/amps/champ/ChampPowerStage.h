@@ -84,6 +84,8 @@ public:
         vCoil = 0.0f;
         nfbSense = 0.0f;
         lastIs = 0.0f;
+        holdCount = 0;
+        sampleCount = 0;
         settleBias();
     }
 
@@ -97,10 +99,13 @@ public:
 
         // Tube Newton always sees Re (the stable flat-8 path). Motional Z and
         // lossy Le are linear filters on is.
+        ++sampleCount;
+        newtonHeld = false;
         const float y = processResistive (vg);
-        if (! std::isfinite (y) || ! std::isfinite (vsTube) || ! std::isfinite (vk)
+        if (newtonHeld || ! std::isfinite (y) || ! std::isfinite (vsTube) || ! std::isfinite (vk)
             || std::abs (vsTube) > kMaxSpeakerV)
         {
+            ++holdCount;
             vs = lastGoodVs;
             vk = lastGoodVk;
             vCoil = lastGoodVCoil;
@@ -118,6 +123,7 @@ public:
 
         if (! std::isfinite (vs) || std::abs (vs) > kMaxSpeakerV)
         {
+            ++holdCount;
             vs = lastGoodVs;
             nfbSense = lastGoodNfbSense;
             return lastGoodVs;
@@ -128,6 +134,13 @@ public:
         lastGoodVCoil = vCoil;
         lastGoodNfbSense = nfbSense;
         return vs;
+    }
+
+    int getHoldCount() const noexcept { return holdCount; }
+    int getSampleCount() const noexcept { return sampleCount; }
+    float getHoldRate() const noexcept
+    {
+        return sampleCount > 0 ? (float) holdCount / (float) sampleCount : 0.0f;
     }
 
     float getSpeakerVolts() const noexcept { return vs; }
@@ -206,7 +219,10 @@ private:
         if (! std::isfinite (x[0]) || ! std::isfinite (x[1])
             || std::abs (x[0]) > kMaxSpeakerV
             || result.residualNorm > 1.0f)
+        {
+            newtonHeld = true;
             return lastGoodVs;
+        }
 
         vsTube = x[0];
         vk = x[1];
@@ -257,6 +273,9 @@ private:
     static constexpr float kEddyCornerHz = 8000.0f;
     bool useLe = false;
     bool useMech = false;
+    bool newtonHeld = false;
+    int holdCount = 0;
+    int sampleCount = 0;
     ComponentSet components;
     cab::SpeakerRlc speaker = cab::makePreset (cab::ImpedancePreset::flat8);
     circuit::CapacitorTrap cathodeBypass;
