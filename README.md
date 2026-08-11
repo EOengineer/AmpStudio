@@ -10,7 +10,7 @@ JUCE audio plugin + standalone shell for tube amp / FX modeling experiments.
 - Modules:
   - **Tube Screamer** — physics-first white-box (oversampled MNA clipper, component mods); see [`docs/tube-screamer.md`](docs/tube-screamer.md)
   - **Champ 5F1** — physics-first white-box (12AX7 → Volume → 12AX7+NFB → 6V6+OT into 8 Ω / cab Z(f)); see [`docs/champ-5f1.md`](docs/champ-5f1.md)
-  - **Cab IR** — ≤2048-sample IR loader + synthetic speaker Z(f) presets (`TODO(measured-z)`) for amp coupling
+  - **Cab IR** — ≤2048-sample IR via `juce::dsp::Convolution` (trim + energy-normalise) + synthetic speaker Z(f) presets (`TODO(measured-z)`) for amp coupling
   - Neural Capture (Input / Output + placeholder load)
 - Input trim (dB) + auto-calibrate to the modeling reference
 - Input / output meters
@@ -40,7 +40,7 @@ The Chain passes **electrical ports** between neighboring *active* slots (empty 
 - **Defaults:** buffered source ≈ **100 Ω**, high-Z input / unloaded ≈ **1 MΩ**. Chain input is treated as an interface (buffered). Levels (−18 dBFS) stay a separate contract.
 - **Per block:** `getOutputPort()` / `getInputLoad()` publish ports; Chain calls `setDriveContext` / `setLoadContext` before `process`.
 - **FX → amp (e.g. Tube Screamer → Champ):** most of the boost is serial audio (level / mids / clip). Low-Z drive is available on the amp’s `driveContext` for a future input network.
-- **Amp → cab:** **Cab IR** publishes speaker load Z(f) via `getInputLoad()` (`SpeakerImpedance` / `SpeakerRlc` synthetic RLC presets — Flat 8Ω / Fender Dlx 1x12 / Marshall 4x12 GB / Mesa 4x12 V30, marked `TODO(measured-z)`). **Champ 5F1** consumes that load through `cab::resolveLoadRlc` in the OT secondary (falls back to flat 8 Ω when unloaded). IR audio path is independent (user WAV/AIFF/FLAC, truncated to **2048** samples). Measured Z tables and amp↔cab co-process remain deferred.
+- **Amp → cab:** **Cab IR** publishes speaker load Z(f) via `getInputLoad()` (`SpeakerImpedance` / `SpeakerRlc` synthetic RLC presets — Flat 8Ω / Fender Dlx 1x12 / Marshall 4x12 GB / Mesa 4x12 V30, marked `TODO(measured-z)`). **Champ 5F1** consumes that load through `cab::resolveLoadRlc` in the OT secondary (falls back to flat 8 Ω when unloaded). IR audio path is independent (`juce::dsp::Convolution`, WAV/AIFF/FLAC, max **2048** samples, energy-normalised). Measured Z tables and amp↔cab co-process remain deferred.
 - **Neural captures:** publish buffered ports and ignore contexts (loading is baked into the capture).
 
 ---
