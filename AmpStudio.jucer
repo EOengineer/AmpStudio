@@ -27,6 +27,7 @@
         <FILE id="icH" name="InputCalibrator.h" compile="0" resource="0" file="Source/dsp/InputCalibrator.h"/>
         <GROUP id="AmStCir" name="circuit">
           <FILE id="cdH" name="DiodeModel.h" compile="0" resource="0" file="Source/dsp/circuit/DiodeModel.h"/>
+          <FILE id="ctuH" name="TubeModel.h" compile="0" resource="0" file="Source/dsp/circuit/TubeModel.h"/>
           <FILE id="crH" name="RcFilters.h" compile="0" resource="0" file="Source/dsp/circuit/RcFilters.h"/>
           <FILE id="cmH" name="MnaNewton.h" compile="0" resource="0" file="Source/dsp/circuit/MnaNewton.h"/>
           <FILE id="coH" name="Oversampler.h" compile="0" resource="0" file="Source/dsp/circuit/Oversampler.h"/>
@@ -44,8 +45,17 @@
         </GROUP>
         <GROUP id="AmStAm" name="amps">
           <FILE id="c5H" name="Champ5F1.h" compile="0" resource="0" file="Source/dsp/amps/Champ5F1.h"/>
+          <GROUP id="AmStChamp" name="champ">
+            <FILE id="ccH" name="ChampComponents.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampComponents.h"/>
+            <FILE id="ctH" name="ChampTriodeStage.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampTriodeStage.h"/>
+            <FILE id="cpH" name="ChampPowerStage.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampPowerStage.h"/>
+            <FILE id="ceH" name="ChampEngine.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampEngine.h"/>
+            <FILE id="cvH" name="ChampVerify.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampVerify.h"/>
+            <FILE id="cbH" name="ChampVerifyBootstrap.h" compile="0" resource="0" file="Source/dsp/amps/champ/ChampVerifyBootstrap.h"/>
+          </GROUP>
         </GROUP>
         <GROUP id="AmStCab" name="cabs">
+          <FILE id="srH" name="SpeakerRlc.h" compile="0" resource="0" file="Source/dsp/cabs/SpeakerRlc.h"/>
           <FILE id="szH" name="SpeakerImpedance.h" compile="0" resource="0" file="Source/dsp/cabs/SpeakerImpedance.h"/>
           <FILE id="cirH" name="CabIR.h" compile="0" resource="0" file="Source/dsp/cabs/CabIR.h"/>
         </GROUP>
