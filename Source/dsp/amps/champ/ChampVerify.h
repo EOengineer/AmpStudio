@@ -237,6 +237,23 @@ struct HashProbe
     }
 };
 
+/** Guitar-ish drive shared by champ_verify and champ_wav_dump. */
+inline float drivenHashInput (int i, float fs,
+                              float digitalAmp = 0.4f,
+                              float toneHz = 220.0f) noexcept
+{
+    constexpr float kPi = 3.14159265358979323846f;
+    const float ph = 2.0f * kPi * toneHz * (float) i / fs;
+    uint32_t rng = 0xA3C5u + (uint32_t) i * 747796405u;
+    rng = rng * 1664525u + 1013904223u;
+    const float noise = (float) (int32_t) rng * (1.0f / 2147483648.0f);
+    return digitalAmp * (0.70f * std::sin (ph)
+                       + 0.20f * std::sin (3.0f * ph)
+                       + 0.10f * std::sin (5.0f * ph)
+                       + 0.15f * std::sin (2.0f * kPi * 3000.0f * (float) i / fs)
+                       + 0.20f * noise);
+}
+
 inline HashProbe runDrivenHash (
     float fs = 48000.0f,
     bool nfbOn = true,
@@ -269,18 +286,7 @@ inline HashProbe runDrivenHash (
 
     for (int i = 0; i < toneSamples; ++i)
     {
-        // Guitar-ish: 220 Hz + odds + 3 kHz pick + deterministic noise.
-        // Steady sines at plugin-default volume never reached 6V6 cutoff and
-        // did not show the NFB-LPF chatter heard on a real guitar.
-        const float ph = 2.0f * kPi * toneHz * (float) i / fs;
-        uint32_t rng = 0xA3C5u + (uint32_t) i * 747796405u;
-        rng = rng * 1664525u + 1013904223u;
-        const float noise = (float) (int32_t) rng * (1.0f / 2147483648.0f);
-        const float vin = digitalAmp * (0.70f * std::sin (ph)
-                                      + 0.20f * std::sin (3.0f * ph)
-                                      + 0.10f * std::sin (5.0f * ph)
-                                      + 0.15f * std::sin (2.0f * kPi * 3000.0f * (float) i / fs)
-                                      + 0.20f * noise);
+        const float vin = drivenHashInput (i, fs, digitalAmp, toneHz);
         const float out = dsp.processSample (vin);
         if (! std::isfinite (out))
             p.finiteAll = false;

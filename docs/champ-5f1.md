@@ -47,7 +47,7 @@ Speaker volts into V1B cathode are **inverted** (V1B and 6V6 each invert; raw OT
 
 Coupling caps are seeded at **equilibrium** after each triode settles (`vC = Vp_idle`) so idle plate DC is not dumped onto the next grid.
 
-Tube islands run at **base sample rate**. 4× `circuit::Oversampler` is deferred: the same stages pass `champ_verify`, but JUCE half-band OS has zeroed this amp in-host. Re-enable OS only after the base-rate plugin path is audible. Debug builds `DBG` in/out peaks on the first few blocks.
+Tube islands run at **base sample rate**. 4× `circuit::Oversampler` is deferred: the same stages pass `champ_verify`, but JUCE half-band OS has zeroed this amp in-host. Re-enable OS only after the base-rate plugin path is audible. Debug builds log per-block holds / hfRatio and write a one-shot host WAV (see below).
 
 ## How we change this model
 
@@ -72,7 +72,7 @@ Only after the host-path probes stay green and the plugin still sounds like HEAD
 
 1. NFB anti-alias LPF (~2–3 kHz on the sense tap) — **tried, reverted.** Signal-following stuttering static with Champ alone (quiet at idle). Extra lag on the 1-sample NFB loop; do not retry the same pole.
 2. Soften 6V6 cutoff in `BeamPowerTube` — **tried, reverted.** Softplus on Child-law drive hashed guitar audio (idle numbers unchanged). Do not retry the same knee.
-3. Soften grid windows (tanh) — clamps stay, edges less crunchy
+3. Soften grid windows (tanh) — **skipped** until the host-vs-offline hash gap is classified (same failure class as 1–2)
 4. Grid current **with clamps still on** — Ig must not 1-sample-snap
 5. gm-matched 6V6 plate — scale to Child-law gm at idle before a full Koren swap; Nyquist idle check is stop-ship
 6. Oversample tube islands only — still deferred until base-rate host stays audible
@@ -113,6 +113,31 @@ Offline checks drive **`ChampDsp`** (not a parallel stage graph). That includes:
 - **Driven hash tripwire** (hot 220 Hz + noise, vol 1, NFB Stock): Newton `lastGood` hold rate, HF / >1.5 kHz energy, derivative flip rate. Catches stutter-holds and huge ultrasonic junk. It does **not** replace a listen — the reverted NFB LPF and soft 6V6 cutoff hashed in-host while these numbers stayed at golden.
 
 A passing report does **not** replace a host listen (Champ alone, Champ + Cab IR, NFB Stock/Off, volume mid/up). Debug plugin builds also `DBG` the report once from `Champ5F1::prepare` — a failed check must not `jassert` / mute the amp.
+
+## Host vs offline hash (Debug)
+
+Two physics slices hashed in the plugin while `champ_verify` stayed green. Classify before the next knee/clamp change.
+
+**Live Debug console** (`ChampEngine::process`): first 32 blocks, then every 32nd, and **always** if Newton `holds > 0` or block `hf` > 0.25. Look for `holds=` and `hf=` while playing.
+
+**Host WAV** (Debug only): after ~2 s of non-silent input, writes `~/Desktop/champ_host_dump.wav` once (L = plugin input, R = Champ output, gain 0.5 so ±2 digital fits in a 16-bit file). Re-`prepare()` (reload the plugin) to capture again.
+
+**Offline WAV** (what verify scores as “not hashed”):
+
+```bash
+clang++ -std=c++17 -O2 -I Source tools/champ_wav_dump.cpp -o tools/champ_wav_dump
+./tools/champ_wav_dump
+```
+
+Writes `tools/champ_offline_dump.wav` (driven-hash stimulus, vol 1, NFB Stock, ~2 s).
+
+Three-way listen:
+
+| Result | Meaning |
+|--------|---------|
+| Host WAV hashes | Bug is in `ChampEngine` / `ChampDsp` (metrics are blind) |
+| Host WAV clean, live hashes | After `process()` (device / DAC / host) |
+| Offline WAV hashes too | `champ_verify` thresholds are wrong |
 
 ## Electrical ports
 
