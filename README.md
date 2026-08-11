@@ -9,8 +9,8 @@ JUCE audio plugin + standalone shell for tube amp / FX modeling experiments.
 - Library tabs: **FX**, **Amps**, **Cabs**, **Captures**
 - Modules:
   - **Tube Screamer** — physics-first white-box (oversampled MNA clipper, component mods); see [`docs/tube-screamer.md`](docs/tube-screamer.md)
-  - Champ 5F1 (Volume) — stub
-  - **Cab IR** — ≤2048-sample IR loader + synthetic speaker Z(f) presets (`TODO(measured-z)`) for amp coupling
+  - **Champ 5F1** — physics-first white-box (12AX7 → Volume → 12AX7+NFB → 6V6+OT into 8 Ω / cab Z(f)); see [`docs/champ-5f1.md`](docs/champ-5f1.md)
+  - **Cab IR** — ≤2048-sample IR via `juce::dsp::Convolution` (trim + energy-normalise) + synthetic speaker Z(f) presets (`TODO(measured-z)`) for amp coupling
   - Neural Capture (Input / Output + placeholder load)
 - Input trim (dB) + auto-calibrate to the modeling reference
 - Input / output meters
@@ -40,7 +40,7 @@ The Chain passes **electrical ports** between neighboring *active* slots (empty 
 - **Defaults:** buffered source ≈ **100 Ω**, high-Z input / unloaded ≈ **1 MΩ**. Chain input is treated as an interface (buffered). Levels (−18 dBFS) stay a separate contract.
 - **Per block:** `getOutputPort()` / `getInputLoad()` publish ports; Chain calls `setDriveContext` / `setLoadContext` before `process`.
 - **FX → amp (e.g. Tube Screamer → Champ):** most of the boost is serial audio (level / mids / clip). Low-Z drive is available on the amp’s `driveContext` for a future input network.
-- **Amp → cab:** **Cab IR** publishes speaker load Z(f) via `getInputLoad()` (`SpeakerImpedance` synthetic RLC presets — Flat 8Ω / Fender Dlx 1x12 / Marshall 4x12 GB / Mesa 4x12 V30, marked `TODO(measured-z)`). Amps that consume `loadContext` can stamp that load; Champ stub still ignores it. IR audio path is independent (user WAV/AIFF/FLAC, truncated to **2048** samples).
+- **Amp → cab:** **Cab IR** publishes speaker load Z(f) via `getInputLoad()` (`SpeakerImpedance` / `SpeakerRlc` synthetic RLC presets — Flat 8Ω / Fender Dlx 1x12 / Marshall 4x12 GB / Mesa 4x12 V30, marked `TODO(measured-z)`). **Champ 5F1** consumes that load through `cab::resolveLoadRlc` in the OT secondary (falls back to flat 8 Ω when unloaded). IR audio path is independent (`juce::dsp::Convolution`, WAV/AIFF/FLAC, max **2048** samples, energy-normalised). Measured Z tables and amp↔cab co-process remain deferred.
 - **Neural captures:** publish buffered ports and ignore contexts (loading is baked into the capture).
 
 ---
@@ -160,7 +160,7 @@ Debug plugin binaries (for DAW installs later) typically appear as:
 1. Click a chain slot to select it
 2. Double-click a library item (or use **Load into selected slot**)
 3. Drag slots to reorder, or use `<` / `>`
-4. Turn stub knobs — they store state but do not color the sound yet
+4. Turn module knobs — Tube Screamer and Champ 5F1 color the sound; other stubs store state only
 5. Adjust **Input Trim** or press **Calibrate** (play hard ~4 s) so the input meter sits near the reference tick
 6. **Master** gain controls output loudness in dB
 

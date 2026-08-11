@@ -63,9 +63,9 @@ Debug plugin builds also `DBG` the report once from `TubeScreamer::prepare` via 
 
 ## Champ reuse
 
-Bring forward:
+Bring forward (now used by [`docs/champ-5f1.md`](champ-5f1.md)):
 
 1. `circuit::Oversampler` around tube nonlinearities  
-2. `circuit::NewtonSolver` / diode (later tube) device stamps  
+2. `circuit::NewtonSolver` / tube device stamps (`TubeModel.h`)  
 3. `ElectricalPort` drive/load already on `Block`  
 4. Named `ComponentSet` pattern per amp schematic  

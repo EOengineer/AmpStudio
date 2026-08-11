@@ -172,6 +172,44 @@ private:
     float x1 = 0.0f, y1 = 0.0f;
 };
 
+/** Trapezoidal companion for an inductor (series or shunt). Geq = T/(2L). */
+struct InductorTrap
+{
+    float l = 0.0f;
+    float sampleRate = 48000.0f;
+    float geq = 0.0f;
+    float iEq = 0.0f;
+    float vPrev = 0.0f;
+    float iPrev = 0.0f;
+
+    void prepare (float inductanceH, float fs) noexcept
+    {
+        l = std::max (inductanceH, 1.0e-12f);
+        sampleRate = fs;
+        const float T = 1.0f / std::max (fs, 1.0f);
+        geq = T / (2.0f * l);
+        reset();
+    }
+
+    void reset() noexcept
+    {
+        iEq = 0.0f;
+        vPrev = 0.0f;
+        iPrev = 0.0f;
+    }
+
+    /** Current through inductor: i = geq*v + iEq. */
+    float current (float v) const noexcept { return geq * v + iEq; }
+
+    void advance (float vNew) noexcept
+    {
+        const float i = geq * vNew + iEq;
+        iEq = i + geq * vNew; // next history
+        iPrev = i;
+        vPrev = vNew;
+    }
+};
+
 /** Series RC impedance Z = R + 1/(sC); corner when 1/(ωC)=R. */
 inline float seriesRcCornerHz (float rOhms, float cFarads) noexcept
 {
