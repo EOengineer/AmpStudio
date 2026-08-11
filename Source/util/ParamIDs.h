@@ -21,6 +21,8 @@ namespace ParamIDs
     namespace Champ5F1
     {
         inline constexpr const char* volume = "volume";
+        /** 0 = Off (22k lifted), 1 = Stock (22k from speaker to V1B cathode) */
+        inline constexpr const char* nfb = "nfb";
     }
 
     namespace CabIR

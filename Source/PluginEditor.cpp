@@ -5,6 +5,7 @@
 #include "dsp/LevelReference.h"
 #include "dsp/captures/NeuralCapture.h"
 #include <cmath>
+#include <vector>
 
 namespace
 {
@@ -68,7 +69,16 @@ AmpStudioAudioProcessorEditor::AmpStudioAudioProcessorEditor (AmpStudioAudioProc
 
     moduleParamsTitle.setFont (juce::FontOptions (16.0f, juce::Font::bold));
     addAndMakeVisible (moduleParamsTitle);
+
+    deepSettingsButton.setClickingTogglesState (true);
+    deepSettingsButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3d6b8a));
+    deepSettingsButton.onClick = [this] { rebuildParamControls(); };
+    addAndMakeVisible (deepSettingsButton);
+    deepSettingsButton.setVisible (false);
+
     addAndMakeVisible (moduleParamsHost);
+    addAndMakeVisible (deepParamsHost);
+    deepParamsHost.setVisible (false);
 
     loadCaptureButton.onClick = [this]
     {
@@ -172,11 +182,19 @@ void AmpStudioAudioProcessorEditor::resized()
     outputCol.removeFromTop (32);
     outputMeter.setBounds (outputCol.reduced (28, 4));
 
-    moduleParamsTitle.setBounds (right.removeFromTop (24));
+    auto titleRow = right.removeFromTop (24);
+    if (deepSettingsButton.isVisible())
+        deepSettingsButton.setBounds (titleRow.removeFromRight (118));
+    moduleParamsTitle.setBounds (titleRow);
     right.removeFromTop (4);
     loadCaptureButton.setBounds (right.removeFromBottom (28));
     loadIrButton.setBounds (loadCaptureButton.getBounds());
     right.removeFromBottom (4);
+    if (deepParamsHost.isVisible())
+    {
+        deepParamsHost.setBounds (right.removeFromBottom (72));
+        right.removeFromBottom (4);
+    }
     moduleParamsHost.setBounds (right);
 
     area.removeFromTop (12);
@@ -259,12 +277,16 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
     paramLabels.clear();
     bindings.clear();
     moduleParamsHost.removeAllChildren();
+    deepParamsHost.removeAllChildren();
 
     auto* block = audioProcessor.getChain().getBlock (audioProcessor.getSelectedSlot());
     if (block == nullptr)
     {
         loadCaptureButton.setVisible (false);
         loadIrButton.setVisible (false);
+        deepSettingsButton.setVisible (false);
+        deepParamsHost.setVisible (false);
+        resized();
         return;
     }
 
@@ -278,6 +300,7 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
         const char* id;
         const char* label;
         ControlKind kind = ControlKind::continuous;
+        bool deep = false;
     };
 
     std::vector<Spec> specs;
@@ -294,6 +317,7 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
     else if (block->getTypeId() == ModuleIds::champ5F1)
     {
         specs.push_back ({ ParamIDs::Champ5F1::volume, "Volume" });
+        specs.push_back ({ ParamIDs::Champ5F1::nfb, "NFB", ControlKind::pill, true });
     }
     else if (block->getTypeId() == ModuleIds::cabIR)
     {
@@ -305,95 +329,115 @@ void AmpStudioAudioProcessorEditor::rebuildParamControls()
         specs.push_back ({ ParamIDs::NeuralCapture::outputGain, "Output" });
     }
 
-    auto bounds = moduleParamsHost.getLocalBounds();
-    const int width = juce::jmax (80, specs.empty() ? 80 : bounds.getWidth() / (int) specs.size());
+    std::vector<Spec> primarySpecs;
+    std::vector<Spec> deepSpecs;
+    for (const auto& spec : specs)
+        (spec.deep ? deepSpecs : primarySpecs).push_back (spec);
 
-    for (size_t i = 0; i < specs.size(); ++i)
+    const bool hasDeep = ! deepSpecs.empty();
+    deepSettingsButton.setVisible (hasDeep);
+    deepParamsHost.setVisible (hasDeep && deepSettingsButton.getToggleState());
+    resized();
+
+    const auto addControls = [this, block] (juce::Component& host, const std::vector<Spec>& list)
     {
-        auto* label = paramLabels.add (new juce::Label ({}, specs[i].label));
-        label->setJustificationType (juce::Justification::centred);
+        auto bounds = host.getLocalBounds();
+        const int width = juce::jmax (80, list.empty() ? 80 : bounds.getWidth() / (int) list.size());
 
-        auto col = bounds.removeFromLeft (width);
-        label->setBounds (col.removeFromTop (20));
-        moduleParamsHost.addAndMakeVisible (label);
-
-        const juce::String paramId (specs[i].id);
-        const int bindingIndex = bindings.size();
-
-        if (specs[i].kind == ControlKind::pill)
+        for (const auto& spec : list)
         {
-            auto* toggle = paramToggles.add (new PillToggle());
+            auto* label = paramLabels.add (new juce::Label ({}, spec.label));
+            label->setJustificationType (juce::Justification::centred);
 
-            if (paramId == ParamIDs::TubeScreamer::outputVariant)
-                toggle->setOptions ("808", "9");
-            else if (paramId == ParamIDs::TubeScreamer::bassCap)
-                toggle->setOptions ("Stock", "More");
+            auto col = bounds.removeFromLeft (width);
+            label->setBounds (col.removeFromTop (20));
+            host.addAndMakeVisible (label);
 
-            const int selected = juce::jlimit (0, 1,
-                                               (int) std::lround (block->getParam (specs[i].id, 0.0f)));
-            toggle->setSelectedIndex (selected, juce::dontSendNotification);
+            const juce::String paramId (spec.id);
+            const int bindingIndex = bindings.size();
 
-            bindings.add ({ specs[i].id, nullptr, nullptr, toggle });
-            toggle->onChange = [this, bindingIndex]
+            if (spec.kind == ControlKind::pill)
             {
-                applyBindingToBlock (bindingIndex);
-            };
+                auto* toggle = paramToggles.add (new PillToggle());
 
-            auto toggleBounds = col.withSizeKeepingCentre (juce::jmin (col.getWidth() - 8, 110), 28);
-            toggle->setBounds (toggleBounds);
-            moduleParamsHost.addAndMakeVisible (toggle);
-        }
-        else if (specs[i].kind == ControlKind::combo)
-        {
-            auto* combo = paramCombos.add (new juce::ComboBox());
-            combo->setJustificationType (juce::Justification::centred);
+                if (paramId == ParamIDs::TubeScreamer::outputVariant)
+                    toggle->setOptions ("808", "9");
+                else if (paramId == ParamIDs::TubeScreamer::bassCap)
+                    toggle->setOptions ("Stock", "More");
+                else if (paramId == ParamIDs::Champ5F1::nfb)
+                    toggle->setOptions ("Off", "Stock");
 
-            if (paramId == ParamIDs::TubeScreamer::diodeMode)
-            {
-                combo->addItem ("Si/Si", 1);
-                combo->addItem ("Asym Si", 2);
-                combo->addItem ("Ge/Si", 3);
-                combo->addItem ("LED", 4);
+                const float pillDefault = (paramId == ParamIDs::Champ5F1::nfb) ? 1.0f : 0.0f;
+                const int selected = juce::jlimit (0, 1,
+                                                   (int) std::lround (block->getParam (spec.id, pillDefault)));
+                toggle->setSelectedIndex (selected, juce::dontSendNotification);
+
+                bindings.add ({ spec.id, nullptr, nullptr, toggle });
+                toggle->onChange = [this, bindingIndex]
+                {
+                    applyBindingToBlock (bindingIndex);
+                };
+
+                auto toggleBounds = col.withSizeKeepingCentre (juce::jmin (col.getWidth() - 8, 110), 28);
+                toggle->setBounds (toggleBounds);
+                host.addAndMakeVisible (toggle);
             }
-            else if (paramId == ParamIDs::CabIR::impedancePreset)
+            else if (spec.kind == ControlKind::combo)
             {
-                combo->addItem ("Flat 8Ω", 1);
-                combo->addItem ("Fender Dlx 1x12", 2);
-                combo->addItem ("Marshall 4x12 GB", 3);
-                combo->addItem ("Mesa 4x12 V30", 4);
+                auto* combo = paramCombos.add (new juce::ComboBox());
+                combo->setJustificationType (juce::Justification::centred);
+
+                if (paramId == ParamIDs::TubeScreamer::diodeMode)
+                {
+                    combo->addItem ("Si/Si", 1);
+                    combo->addItem ("Asym Si", 2);
+                    combo->addItem ("Ge/Si", 3);
+                    combo->addItem ("LED", 4);
+                }
+                else if (paramId == ParamIDs::CabIR::impedancePreset)
+                {
+                    combo->addItem ("Flat 8Ω", 1);
+                    combo->addItem ("Fender Dlx 1x12", 2);
+                    combo->addItem ("Marshall 4x12 GB", 3);
+                    combo->addItem ("Mesa 4x12 V30", 4);
+                }
+
+                const int selected = juce::jlimit (0, combo->getNumItems() - 1,
+                                                   (int) std::lround (block->getParam (spec.id, 0.0f)));
+                combo->setSelectedItemIndex (selected, juce::dontSendNotification);
+
+                bindings.add ({ spec.id, nullptr, combo, nullptr });
+                combo->onChange = [this, bindingIndex]
+                {
+                    applyBindingToBlock (bindingIndex);
+                };
+
+                combo->setBounds (col.reduced (4, 28));
+                host.addAndMakeVisible (combo);
             }
-
-            const int selected = juce::jlimit (0, combo->getNumItems() - 1,
-                                               (int) std::lround (block->getParam (specs[i].id, 0.0f)));
-            combo->setSelectedItemIndex (selected, juce::dontSendNotification);
-
-            bindings.add ({ specs[i].id, nullptr, combo, nullptr });
-            combo->onChange = [this, bindingIndex]
+            else
             {
-                applyBindingToBlock (bindingIndex);
-            };
+                auto* slider = paramSliders.add (new juce::Slider (juce::Slider::RotaryHorizontalVerticalDrag,
+                                                                   juce::Slider::TextBoxBelow));
+                slider->setRange (0.0, 1.0, 0.01);
+                slider->setValue (block->getParam (spec.id, 0.5f),
+                                  juce::dontSendNotification);
 
-            combo->setBounds (col.reduced (4, 28));
-            moduleParamsHost.addAndMakeVisible (combo);
+                bindings.add ({ spec.id, slider, nullptr, nullptr });
+                slider->onValueChange = [this, bindingIndex]
+                {
+                    applyBindingToBlock (bindingIndex);
+                };
+
+                slider->setBounds (col.reduced (8));
+                host.addAndMakeVisible (slider);
+            }
         }
-        else
-        {
-            auto* slider = paramSliders.add (new juce::Slider (juce::Slider::RotaryHorizontalVerticalDrag,
-                                                               juce::Slider::TextBoxBelow));
-            slider->setRange (0.0, 1.0, 0.01);
-            slider->setValue (block->getParam (specs[i].id, 0.5f),
-                              juce::dontSendNotification);
+    };
 
-            bindings.add ({ specs[i].id, slider, nullptr, nullptr });
-            slider->onValueChange = [this, bindingIndex]
-            {
-                applyBindingToBlock (bindingIndex);
-            };
-
-            slider->setBounds (col.reduced (8));
-            moduleParamsHost.addAndMakeVisible (slider);
-        }
-    }
+    addControls (moduleParamsHost, primarySpecs);
+    if (deepParamsHost.isVisible())
+        addControls (deepParamsHost, deepSpecs);
 
     moduleParamsTitle.setText ("Selected: " + block->getDisplayName(),
                                juce::dontSendNotification);

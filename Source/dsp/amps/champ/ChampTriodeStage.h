@@ -25,13 +25,19 @@ public:
         ra = plateR;
         rk = cathodeR;
         vb = bplus;
-        rnfb = nfbR;
         ga = 1.0f / std::max (ra, 1.0f);
         gk = 1.0f / std::max (rk, 1.0f);
-        gnfb = (rnfb > 1.0f) ? (1.0f / rnfb) : 0.0f;
         bypass.prepare (bypassC, fs);
         tube = circuit::twelveAx7();
+        setNfbOhms (nfbR);
         reset();
+    }
+
+    /** Update Rnfb without resettling the island (Stock/Off toggle). */
+    void setNfbOhms (float nfbR) noexcept
+    {
+        rnfb = nfbR;
+        gnfb = (rnfb > 1.0f) ? (1.0f / rnfb) : 0.0f;
     }
 
     void reset() noexcept

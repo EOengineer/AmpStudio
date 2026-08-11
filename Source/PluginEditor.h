@@ -45,7 +45,9 @@ private:
     LevelMeter outputMeter;
 
     juce::Label moduleParamsTitle { {}, "Selected Module" };
+    juce::TextButton deepSettingsButton { "Deep settings" };
     juce::Component moduleParamsHost;
+    juce::Component deepParamsHost;
     juce::OwnedArray<juce::Slider> paramSliders;
     juce::OwnedArray<juce::ComboBox> paramCombos;
     juce::OwnedArray<PillToggle> paramToggles;
